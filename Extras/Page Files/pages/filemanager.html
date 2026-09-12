@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 File Manager</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📁</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="filemanager">
+    <div class="page-card">
+        <div class="header">
+            <div class="dropdown">
+                <div class="dropbtn"><h1>☰ File Manager</h1></div>
+                <div class="dropdown-content">
+                		<a href="/" class="tooltip">
+                        Payloads
+                        <span class="tooltiptext">Upload payload files to the ESP32</span>
+                    </a>
+                    <a href="/edit" class="tooltip">
+                        File Editor
+                        <span class="tooltiptext">Edit your files directly on the ESP32</span>
+                    </a>
+                    <a href="/ota" class="tooltip">
+                        Update Firmware
+                        <span class="tooltiptext">Update your ESP32 firmware from an online server or from a local firmware file</span>
+                    </a>
+                    <a href="/config" class="tooltip">
+                        Configure Settings
+                        <span class="tooltiptext">Alter your WiFi/FTP/AP and other settings</span>
+                    </a>
+                    <a href="/downloader" class="tooltip">
+                        TAR Installer
+                        <span class="tooltiptext">Downloads TAR files to PSRAM and extracts them to your flash FFAT partiton</span>
+                    </a>
+                    <a href="/info" class="tooltip">
+                        Information
+                        <span class="tooltiptext">Show information about the ESP32-Sx chip</span>
+                    </a>
+                    <a href="javascript:StartFTP();" class="tooltip">
+                        Start FTP Server
+                        <span class="tooltiptext">Manage your files from FTP</span>
+                    </a>
+                    <a href="javascript:StopFTP();" class="tooltip">
+                        Stop FTP Server
+                        <span class="tooltiptext">Quits the FTP server if enabled</span>
+                    </a>
+                    <a href="javascript:format();" class="tooltip">
+                        Format Flash
+                        <span class="tooltiptext">Wipes all your files and fixes you flash FFAT partition</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div id="loadingSpinner" style="display: none;">
+            <p></p>
+            <div style="
+                    margin-left: auto;
+                    margin-right: auto;
+                    margin-top: -20px;
+                    border: 5px solid #f3f3f3;
+                    border-top: 5px solid #3498db;
+                    border-radius: 50%;
+                    width: 50px;
+                    height: 50px;
+                    animation: spin 1s linear infinite;
+                ">
+            </div>
+            <p><spintext>Working, please wait...</spintext></p>
+        </div>
+        <div class="section-fm">
+        	<div class="section-fm2">
+        	<div class="menu-bar">
+                <button id="create-folder-button">Create Folder</button>
+                <button id="upload-button">Upload Files</button>
+                <button id="delete-all-button">Delete All</button>
+                <!--<div class="view-toggle">-->
+                <button id="grid-view-btn" class="active">Grid</button>
+                <button id="list-view-btn">List</button>
+                <!--</div>-->
+            </div>
+      </div>
+        <div class="container">
+            <input type="file" id="file-upload" multiple style="display: none;">
+            <button id="back-button">Back</button>
+            <div id="upload-modal" class="upload-modal">
+            <div class="progress-container">
+                <div class="progress-circle">
+                    <span id="progress-text">0%</span>
+                </div>
+                <div id="completion-message"></div>
+            </div>
+        </div>
+            <div id="no-files-message">No files found.</div>
+            <div id="file-manager"></div>
+        </div>
+      	</div>
+        <footer class="footer-card">
+            <div class="footer-line">
+                <a href="/" title="Go Home">Go Home</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- New Custom Modal -->
+    <div id="customModal" class="custom-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">⚠️</div>
+                <h2>DANGER: ROOT FOLDER DELETION</h2>
+            </div>
+            <div class="modal-body">
+                <p>This will permanently erase ALL files and folders in your root directory.</p>
+                <p class="warning-text">This action cannot be undone!</p>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancelDelete" class="modal-button cancel">
+                    <span class="button-icon">←</span> CANCEL
+                </button>
+                <button id="confirmDelete" class="modal-button delete">
+                    DELETE ALL <span class="button-icon">☠️</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Selection Modal -->
+    <div id="uploadSelectionModal" class="upload-selection-modal" style="display: none;">
+        <div class="upload-selection-content">
+            <div class="upload-selection-header">
+                <div class="upload-selection-icon">📤</div>
+                <h2>Upload Selection</h2>
+            </div>
+            <p>Choose what you want to upload:</p>
+            <div class="upload-selection-buttons">
+                <button id="uploadFilesBtn" class="upload-selection-btn upload-files">
+                    <span class="btn-icon">📄</span> Files
+                </button>
+                <button id="uploadFolderBtn" class="upload-selection-btn upload-folder">
+                    <span class="btn-icon">📁</span> Folder
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- themed create folders -->
+    <div id="createFolderModal" class="custom-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">📁</div>
+                <h2>CREATE NEW FOLDER</h2>
+            </div>
+            <div class="modal-body">
+                <p>Enter a name for the new folder:</p>
+                <input type="text" id="folderNameInput" class="folder-name-input" placeholder="Folder name" autofocus>
+                <p id="folderError" class="warning-text" style="display: none;"></p>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancelCreateFolder" class="modal-button cancel">
+                    <span class="button-icon">←</span> CANCEL
+                </button>
+                <button id="confirmCreateFolder" class="modal-button create">
+                    CREATE <span class="button-icon">➕</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- themed alert -->
+    <div id="alertModal" class="custom-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">⚠️</div>
+                <h2>ALERT</h2>
+            </div>
+            <div class="modal-body">
+                <p id="alertMessage"></p>
+            </div>
+            <div class="modal-buttons">
+                <button id="confirmAlert" class="modal-button cancel">
+                    OK <span class="button-icon">✓</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="confirmModal" class="custom-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">❓</div>
+                <h2>CONFIRM</h2>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage"></p>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancelConfirm" class="modal-button cancel">
+                    <span class="button-icon">✖</span> CANCEL
+                </button>
+                <button id="okConfirm" class="modal-button create">
+                    OK <span class="button-icon">✓</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder Upload Warning Modal -->
+    <div id="folderWarningModal" class="custom-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">⚠️</div>
+                <h2>FOLDER UPLOAD NOTICE</h2>
+            </div>
+            <div class="modal-body">
+                <p>When you click "Continue", your browser will show a security warning about folder uploads.</p>
+                <p class="warning-text">This is normal and ensures you're aware you're sharing folder structure.</p>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancelFolderUpload" class="modal-button cancel">
+                    <span class="button-icon">✖</span> CANCEL
+                </button>
+                <button id="continueFolderUpload" class="modal-button create">
+                    CONTINUE <span class="button-icon">➔</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add the new Rename Modal -->
+    <div id="renameModal" class="custom-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">✏️</div>
+                <h2>RENAME</h2>
+            </div>
+            <div class="modal-body">
+                <p>Enter new name:</p>
+                <input type="text" id="renameInput" class="folder-name-input" placeholder="New name" autofocus>
+                <p id="renameError" class="warning-text" style="display: none;"></p>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancelRename" class="modal-button cancel">
+                    <span class="button-icon">←</span> CANCEL
+                </button>
+                <button id="confirmRename" class="modal-button create">
+                    RENAME <span class="button-icon">✏️</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deletion-progress" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 20px; border-radius: 10px; z-index: 10000;">
+        <div style="margin-bottom: 10px;">Deleting items...</div>
+        <div id="deletion-progress-text">Preparing...</div>
+        <div style="width: 100%; background: #333; height: 10px; margin-top: 10px;">
+            <div id="deletion-progress-bar" style="height: 100%; background: #4CAF50; width: 0%;"></div>
+        </div>
+    </div>
+    <script>
+        // DOM Elements
+        var spinner = document.getElementById("loadingSpinner");
+        const fileManager = document.getElementById('file-manager');
+        const noFilesMessage = document.getElementById('no-files-message');
+        const fileUploadInput = document.getElementById('file-upload');
+        const backButton = document.getElementById('back-button');
+        const uploadButton = document.getElementById('upload-button');
+        const uploadModal = document.getElementById('upload-modal');
+        const progressCircle = document.querySelector('.progress-circle');
+        const progressText = document.getElementById('progress-text');
+        const gridViewBtn = document.getElementById('grid-view-btn');
+        const listViewBtn = document.getElementById('list-view-btn');
+        const createFolderBtn = document.getElementById('create-folder-button');
+
+        // Get the new modal elements
+        const uploadSelectionModal = document.getElementById('uploadSelectionModal');
+        const uploadFilesBtn = document.getElementById('uploadFilesBtn');
+        const uploadFolderBtn = document.getElementById('uploadFolderBtn');
+
+        // State variables
+        let currentPath = [''];
+        let currentView = 'list'; // Default view
+
+        // Send a GET request to one of the multimedia control endpoints (/mmstop or /mmstart)
+        // and confirm it replied with "OK". Throws on any failure.
+        async function callMultimediaControl(endpoint) {
+        const response = await fetch(endpoint);
+
+        if (!response.ok) {
+        throw new Error(endpoint + ' request failed: ' + response.statusText);
+        }
+
+        const text = (await response.text()).trim();
+        console.log(endpoint + ' response:', JSON.stringify(text));
+
+        if (text !== 'OK') {
+        throw new Error('Unexpected ' + endpoint + ' response: ' + text);
+        }
+        }
+
+        // Make listview button Active when the page loads
+        gridViewBtn.classList.remove('active');
+        listViewBtn.classList.add('active');
+
+        // Initialize view
+        fileManager.classList.add('list-view');
+
+        // Event Listeners
+        gridViewBtn.addEventListener('click', switchToGridView);
+        listViewBtn.addEventListener('click', switchToListView);
+        uploadButton.addEventListener('click', handleUploadClick);
+        fileUploadInput.addEventListener('change', handleFileUpload);
+        backButton.addEventListener('click', goBack);
+        createFolderBtn.addEventListener('click', createFolder);
+
+        //removes createFolderBtn if reply is not 1
+        document.addEventListener("DOMContentLoaded", function () {
+        fetch('/fm-get-fs-type')
+        .then(response => response.text())
+        .then(fsType => {
+        if (parseInt(fsType) !== 1) {
+        createFolderBtn.style.display = "none";
+        }
+        })
+        .catch(error => console.error('Error fetching filesystem type:', error));
+
+        fetchFolderContents(currentPath);
+        });
+
+        function handleUploadClick() {
+        // Create file inputs
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.multiple = true;
+
+        const folderInput = document.createElement('input');
+        folderInput.type = 'file';
+        folderInput.webkitdirectory = true;
+
+        openUploadSelectionModal().then(choice => {
+        if (choice === 'files') {
+        // Regular file upload
+        fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+        uploadFiles(e.target.files);
+        }
+        });
+        fileInput.click();
+        } else {
+        // Folder upload - show our warning first
+        openFolderWarningModal().then(confirmed => {
+        if (confirmed) {
+        folderInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+        uploadFiles(e.target.files);
+        }
+        });
+        folderInput.click();
+        }
+        });
+        }
+        });
+        }
+
+        // New function to handle the folder warning modal
+        function openFolderWarningModal() {
+        return new Promise((resolve) => {
+        const modal = document.getElementById("folderWarningModal");
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        // Clean up previous listeners
+        document.getElementById("continueFolderUpload").onclick = null;
+        document.getElementById("cancelFolderUpload").onclick = null;
+
+        document.getElementById("continueFolderUpload").onclick = () => {
+        closeFolderWarningModal();
+        resolve(true);
+        };
+
+        document.getElementById("cancelFolderUpload").onclick = () => {
+        closeFolderWarningModal();
+        resolve(false);
+        };
+        });
+        }
+
+        function closeFolderWarningModal() {
+        const modal = document.getElementById("folderWarningModal");
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.style.display = "none";
+        }, 300);
+        }
+
+        function openUploadSelectionModal() {
+        return new Promise((resolve) => {
+        const modal = document.getElementById("uploadSelectionModal");
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        document.getElementById("uploadFilesBtn").onclick = () => {
+        closeUploadSelectionModal();
+        resolve('files');
+        };
+
+        document.getElementById("uploadFolderBtn").onclick = () => {
+        closeUploadSelectionModal();
+        resolve('folder');
+        };
+        });
+        }
+
+        function closeUploadSelectionModal() {
+        const modal = document.getElementById("uploadSelectionModal");
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.style.display = "none";
+        // Clean up event handlers
+        document.getElementById("uploadFilesBtn").onclick = null;
+        document.getElementById("uploadFolderBtn").onclick = null;
+        }, 300);
+        }
+
+        function openDeleteModal() {
+        const modal = document.getElementById("customModal");
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        // Return a promise that resolves when user makes a choice
+        return new Promise((resolve) => {
+        document.getElementById("confirmDelete").onclick = () => {
+        closeModal();
+        resolve(true);
+        };
+        document.getElementById("cancelDelete").onclick = () => {
+        closeModal();
+        resolve(false);
+        };
+        });
+        }
+
+        function closeModal() {
+        const modal = document.getElementById("customModal");
+        modal.classList.remove("show");
+        setTimeout(() => modal.style.display = "none", 300);
+        }
+
+        function switchToGridView() {
+        if (currentView !== 'grid') {
+        currentView = 'grid';
+        fileManager.classList.remove('list-view');
+        fileManager.classList.add('grid-view');
+        gridViewBtn.classList.add('active');
+        listViewBtn.classList.remove('active');
+        fetchFolderContents(currentPath);
+        }
+        }
+
+        function switchToListView() {
+        if (currentView !== 'list') {
+        currentView = 'list';
+        fileManager.classList.remove('grid-view');
+        fileManager.classList.add('list-view');
+        listViewBtn.classList.add('active');
+        gridViewBtn.classList.remove('active');
+        fetchFolderContents(currentPath);
+        }
+        }
+
+        function fetchFolderContents(path) {
+        let folderPath = path.join('/');
+        if (!folderPath.startsWith('/')) folderPath = '/' + folderPath;
+        fetch(`/fm-get-folder-contents?path=${folderPath}`)
+        .then(response => response.text())
+        .then(data => {
+        const items = parseData(data);
+        displayItems(items);
+        })
+        .catch(error => console.error('Error fetching folder contents:', error));
+        }
+
+        function parseData(data) {
+        return data.split(':').map(item => {
+        const [type, name, size] = item.split(',');
+        return {
+        type: type == '1' ? 'folder' : 'file',
+        name,
+        size: size === '-' ? null : parseInt(size, 10),
+        };
+        });
+        }
+
+        function createItemElement(item) {
+        return currentView === 'list' ? createListItemElement(item) : createGridItemElement(item);
+        }
+
+        function createListItemElement(item) {
+        const itemElement = document.createElement('div');
+        itemElement.classList.add('list-item');
+
+        if (item.type === 'folder') {
+        itemElement.addEventListener('click', (event) => {
+        if (!event.target.classList.contains('list-actions') &&
+        !event.target.closest('.list-actions')) {
+        openFolder(item.name);
+        }
+        });
+        }
+
+        const iconElement = document.createElement('div');
+        iconElement.classList.add('list-icon');
+        iconElement.textContent = item.type === 'folder' ? '📁' : '📄';
+
+        const nameElement = document.createElement('div');
+        nameElement.classList.add('list-name');
+        nameElement.textContent = item.name;
+
+        itemElement.appendChild(iconElement);
+        itemElement.appendChild(nameElement);
+
+        if (item.size !== null) {
+        const sizeElement = document.createElement('div');
+        sizeElement.classList.add('list-size');
+        sizeElement.textContent = `${(item.size / 1024).toFixed(2)} KB`;
+        itemElement.appendChild(sizeElement);
+        }
+
+        const actionsElement = document.createElement('div');
+        actionsElement.classList.add('list-actions');
+
+        if (item.type === 'file') {
+        const downloadButton = document.createElement('button');
+        downloadButton.textContent = 'Download';
+        downloadButton.addEventListener('click', () => downloadFile(item.name));
+        actionsElement.appendChild(downloadButton);
+        }
+
+        // Add Rename button
+        const renameButton = document.createElement('button');
+        renameButton.textContent = 'Rename';
+        renameButton.classList.add('rename-btn');
+        renameButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        renameItem(item.name, item.type);
+        });
+        actionsElement.appendChild(renameButton);
+
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = item.type === 'folder' ? 'Delete Folder' : 'Delete';
+        deleteButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (item.type === 'folder') {
+        deleteFolder(item.name);
+        } else {
+        deleteFile(item.name);
+        }
+        });
+        actionsElement.appendChild(deleteButton);
+
+        itemElement.appendChild(actionsElement);
+
+        return itemElement;
+        }
+
+        function createGridItemElement(item) {
+        const itemElement = document.createElement('div');
+        itemElement.classList.add('item');
+
+        if (item.type === 'folder') {
+        itemElement.addEventListener('click', (event) => {
+        if (event.target.tagName === 'BUTTON') return;
+        openFolder(item.name);
+        });
+        }
+
+        const iconElement = document.createElement('div');
+        iconElement.classList.add('icon');
+        iconElement.textContent = item.type === 'folder' ? '📁' : '📄';
+
+        const nameElement = document.createElement('div');
+        nameElement.classList.add('name');
+        nameElement.textContent = item.name;
+
+        const sizeElement = document.createElement('div');
+        if (item.size !== null) {
+        sizeElement.textContent = `${(item.size / 1024).toFixed(2)} KB`;
+        sizeElement.style.color = '#666';
+        }
+
+        itemElement.appendChild(iconElement);
+        itemElement.appendChild(nameElement);
+        if (item.size !== null) itemElement.appendChild(sizeElement);
+
+        const actionsElement = document.createElement('div');
+        actionsElement.classList.add('actions');
+
+        if (item.type === 'file') {
+        const downloadButton = document.createElement('button');
+        downloadButton.textContent = 'Download';
+        downloadButton.addEventListener('click', () => downloadFile(item.name));
+        actionsElement.appendChild(downloadButton);
+        }
+
+        // Add Rename button
+        const renameButton = document.createElement('button');
+        renameButton.textContent = 'Rename';
+        renameButton.classList.add('rename-btn');
+        renameButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        renameItem(item.name, item.type);
+        });
+        actionsElement.appendChild(renameButton);
+
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = item.type === 'folder' ? 'Delete Folder' : 'Delete';
+        deleteButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (item.type === 'folder') {
+        deleteFolder(item.name);
+        } else {
+        deleteFile(item.name);
+        }
+        });
+        actionsElement.appendChild(deleteButton);
+
+        itemElement.appendChild(actionsElement);
+
+        return itemElement;
+        }
+
+        function openRenameModal(currentName) {
+        return new Promise((resolve) => {
+        const modal = document.getElementById("renameModal");
+        const input = document.getElementById("renameInput");
+        const error = document.getElementById("renameError");
+
+        // Reset modal state
+        input.value = currentName;
+        error.style.display = "none";
+
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+        input.focus();
+
+        const handleConfirm = () => {
+        const newName = input.value.trim();
+        if (!newName) {
+        error.textContent = "Name cannot be empty!";
+        error.style.display = "block";
+        return;
+        }
+
+        if (/[\\/:*?"<>|]/.test(newName)) {
+        error.textContent = "Invalid characters in name!";
+        error.style.display = "block";
+        return;
+        }
+
+        closeRenameModal();
+        resolve(newName);
+        };
+
+        document.getElementById("confirmRename").onclick = handleConfirm;
+
+        input.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+        handleConfirm();
+        }
+        });
+
+        document.getElementById("cancelRename").onclick = () => {
+        closeRenameModal();
+        resolve(null);
+        };
+        });
+        }
+
+        function closeRenameModal() {
+        const modal = document.getElementById("renameModal");
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.style.display = "none";
+        document.getElementById("confirmRename").onclick = null;
+        document.getElementById("cancelRename").onclick = null;
+        }, 300);
+        }
+
+        function renameItem(itemName, itemType) {
+        openRenameModal(itemName).then(newName => {
+        if (!newName || newName === itemName) return;
+
+        spinner.style.display = "block";
+
+        const currentPathStr = currentPath.join('/');
+        const oldPath = (currentPathStr.startsWith('/') ? '' : '/') + currentPathStr + (currentPathStr.endsWith('/') ? '' : '/') + itemName;
+        const newPath = (currentPathStr.startsWith('/') ? '' : '/') + currentPathStr + (currentPathStr.endsWith('/') ? '' : '/') + newName;
+
+        fetch(`/fm-rename?oldPath=${encodeURIComponent(oldPath)}&newPath=${encodeURIComponent(newPath)}`)
+        .then(response => response.json())
+        .then(data => {
+        spinner.style.display = "none";
+        if (data.status === 'success') {
+        fetchFolderContents(currentPath);
+        } else {
+        showAlert(`Error renaming ${itemType}: ${data.message}`, "ERROR", "❌", "error");
+        }
+        })
+        .catch(error => {
+        spinner.style.display = "none";
+        console.error('Error renaming item:', error);
+        showAlert(`Failed to rename ${itemType}.`, "ERROR", "❌", "error");
+        });
+        });
+        }
+
+        function displayItems(items) {
+        fileManager.innerHTML = '';
+
+        const validItems = items.filter(item => item && item.name && item.name.trim() !== '');
+        if (validItems.length === 0) {
+        fileManager.style.display = 'none';
+        noFilesMessage.style.display = 'block';
+        } else {
+        fileManager.style.display = currentView === 'list' ? 'block' : 'grid';
+        noFilesMessage.style.display = 'none';
+
+        validItems.sort((a, b) => {
+        if (a.type === b.type) {
+        return a.name.localeCompare(b.name);
+        }
+        return a.type === 'folder' ? -1 : 1;
+        });
+
+        validItems.forEach(item => {
+        const itemElement = createItemElement(item);
+        fileManager.appendChild(itemElement);
+        });
+        }
+
+        backButton.style.display = currentPath.length > 1 ? 'block' : 'none';
+        }
+
+        function openFolder(folderName) {
+        currentPath.push(folderName);
+        fetchFolderContents(currentPath);
+        }
+
+        function goBack() {
+        currentPath.pop();
+        fetchFolderContents(currentPath);
+        }
+
+        function downloadFile(fileName) {
+        const filePath = currentPath.concat(fileName).join('/');
+        window.location.href = `/fm-download?path=${filePath}`;
+        }
+
+        async function deleteFile(fileName) {
+        const deleteButton = document.getElementById("delete-all-button"); // Add this line
+        const filePath = currentPath.concat(fileName).join('/');
+        const confirmed = await showConfirm(`Are you sure you want to delete "${fileName}"?`, "CONFIRM DELETE");
+        if (!confirmed) return;
+
+        spinner.style.display = "block";
+        deleteButton.disabled = true;
+
+        // Issue /mmstop and wait for the "OK" reply before deleting
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        showAlert('Could not stop playback before delete: ' + error.message, "ERROR", "❌", "error");
+        spinner.style.display = "none";
+        deleteButton.disabled = false;
+        return;
+        }
+
+        try {
+        const response = await fetch(`/fm-delete?path=${filePath}`, { method: 'GET' });
+        const data = await response.json();
+        if (data.status === 'success') {
+        fetchFolderContents(currentPath);
+        } else {
+        showAlert(`Error deleting file: ${data.message}`, "ERROR", "❌", "error");
+        }
+        } catch (error) {
+        console.error('Error deleting file:', error);
+        showAlert('Failed to delete the file.', "ERROR", "❌", "error");
+        } finally {
+        // Resume playback whether the delete succeeded or failed
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        spinner.style.display = "none";
+        deleteButton.disabled = false;
+        }
+        }
+
+        async function deleteFolder(folderName) {
+        const deleteButton = document.getElementById("delete-all-button");
+        let folderPath = currentPath.concat(folderName).join('/');
+        if (!folderPath.startsWith('/')) folderPath = '/' + folderPath;
+
+        const confirmed = await showConfirm(
+        `Delete folder "${folderName}" and all contents?`,
+        "CONFIRM DELETE"
+        );
+        if (!confirmed) return;
+
+        spinner.style.display = "block";
+        deleteButton.disabled = true;
+
+        // Issue /mmstop and wait for the "OK" reply before deleting
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        showAlert('Could not stop playback before delete: ' + error.message, "ERROR", "❌", "error");
+        spinner.style.display = "none";
+        deleteButton.disabled = false;
+        return;
+        }
+
+        try {
+        // 1. Get all contents recursively
+        const allItems = await getAllFolderContentsRecursive(folderPath);
+
+        // Initialize progress (0%)
+        showDeletionProgress(0, allItems.length, 'Starting deletion...');
+
+        // 2. Delete each item
+        for (let i = 0; i < allItems.length; i++) {
+        const item = allItems[i];
+        // Update progress before deleting each item
+        showDeletionProgress(
+        i + 1,
+        allItems.length,
+        `Deleting: ${item.path.split('/').pop()}` // Show filename only
+        );
+
+        await deleteItem(item.path, item.type);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+        }
+
+        // 3. Delete the parent folder itself
+        showDeletionProgress(allItems.length + 1, allItems.length + 1, 'Deleting folder...');
+        await deleteItem(folderPath, 'folder');
+
+        // Refresh UI
+        fetchFolderContents(currentPath);
+        } catch (error) {
+        showAlert(`Deletion failed: ${error.message}`, "ERROR", "❌", "error");
+        } finally {
+        // Resume playback whether the deletion succeeded or failed
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        spinner.style.display = "none";
+        deleteButton.disabled = false;
+        hideDeletionProgress();
+        }
+        }
+
+        async function getAllFolderContentsRecursive(basePath) {
+        const response = await fetchWithTimeout(`/fm-get-folder-contents-recursive?path=${encodeURIComponent(basePath)}`, {}, 15000);
+        const data = await response.text();
+
+        // Parse the response into an array of {type, path} objects
+        return data.split(':').filter(Boolean).map(item => {
+        const [type, path] = item.split(',');
+        return {
+        type: type === '1' ? 'folder' : 'file',
+        path: path
+        };
+        }).sort((a, b) => {
+        // Sort by path depth (deepest first) for proper deletion order
+        const aDepth = a.path.split('/').length;
+        const bDepth = b.path.split('/').length;
+        return bDepth - aDepth;
+        });
+        }
+
+        async function deleteItem(path, type) {
+        try {
+        const endpoint = type === 'folder' ? 'fm-delete-folder' : 'fm-delete';
+        const response = await fetchWithTimeout(`${endpoint}?path=${encodeURIComponent(path)}`, {}, 60000);
+
+        if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status !== 'success') {
+        throw new Error(data.message || 'Unknown error');
+        }
+        return true;
+        } catch (error) {
+        console.error(`Error deleting ${type} at ${path}:`, error);
+        return false; // Return false instead of throwing to allow continuation
+        }
+        }
+
+        function fetchWithTimeout(url, options = {}, timeout = 60000) {
+        return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), timeout)
+        )
+        ]);
+        }
+
+        function createFolder() {
+        openCreateFolderModal().then(async (folderName) => {
+        if (!folderName) return;
+
+        let folderPath = currentPath.concat(folderName).join('/');
+        if (!folderPath.startsWith('/')) folderPath = '/' + folderPath;
+
+        spinner.style.display = "block";
+
+        // Issue /mmstop and wait for the "OK" reply before creating the folder
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        showAlert('Could not stop playback before creating folder: ' + error.message, "ERROR", "❌", "error");
+        spinner.style.display = "none";
+        return;
+        }
+
+        try {
+        const response = await fetch(`/fm-create-folder?path=${encodeURIComponent(folderPath)}`);
+        const data = await response.json();
+        if (data.status === 'success') {
+        fetchFolderContents(currentPath);
+        } else {
+        showAlert(`Error creating folder: ${data.message}`, "ERROR", "❌", "error");
+        }
+        } catch (error) {
+        console.error('Error creating folder:', error);
+        showAlert('Failed to create folder.', "ERROR", "❌", "error");
+        } finally {
+        // Resume playback whether the folder creation succeeded or failed
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        spinner.style.display = "none";
+        }
+        });
+        }
+
+        function openCreateFolderModal() {
+        return new Promise((resolve) => {
+        const modal = document.getElementById("createFolderModal");
+        const input = document.getElementById("folderNameInput");
+        const error = document.getElementById("folderError");
+
+        // Reset modal state
+        input.value = "";
+        error.style.display = "none";
+
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+        input.focus();
+
+        const handleConfirm = () => {
+        const folderName = input.value.trim();
+        if (!folderName) {
+        error.textContent = "Folder name cannot be empty!";
+        error.style.display = "block";
+        return;
+        }
+
+        if (/[\\/:*?"<>|]/.test(folderName)) {
+        error.textContent = "Invalid characters in folder name!";
+        error.style.display = "block";
+        return;
+        }
+
+        closeCreateFolderModal();
+        resolve(folderName);
+        };
+
+        // Add click outside handler
+        const handleClickOutside = (e) => {
+        if (e.target === modal) {
+        closeCreateFolderModal();
+        resolve(null);
+        }
+        };
+        modal.addEventListener('click', handleClickOutside);
+
+        document.getElementById("confirmCreateFolder").onclick = handleConfirm;
+
+        input.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+        handleConfirm();
+        }
+        });
+
+        document.getElementById("cancelCreateFolder").onclick = () => {
+        closeCreateFolderModal();
+        resolve(null);
+        };
+        });
+        }
+
+        function closeCreateFolderModal() {
+        const modal = document.getElementById("createFolderModal");
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.style.display = "none";
+        // Clean up event handlers
+        document.getElementById("confirmCreateFolder").onclick = null;
+        document.getElementById("cancelCreateFolder").onclick = null;
+        }, 300);
+        }
+
+        function handleFileUpload() {
+        const files = fileUploadInput.files;
+        if (files.length > 0) {
+        uploadFiles(files);
+        }
+        }
+
+        function handleUploadClick() {
+        // Create file inputs
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.multiple = true;
+
+        const folderInput = document.createElement('input');
+        folderInput.type = 'file';
+        folderInput.webkitdirectory = true;
+
+        openUploadSelectionModal().then(choice => {
+        if (choice === 'files') {
+        // Regular file upload
+        fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+        uploadFiles(e.target.files);
+        }
+        });
+        fileInput.click();
+        } else {
+        // Folder upload - show our warning first
+        openFolderWarningModal().then(confirmed => {
+        if (confirmed) {
+        // Only after user confirms our warning, trigger Chrome's native dialog
+        folderInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+        uploadFiles(e.target.files);
+        }
+        });
+        folderInput.click();
+        }
+        });
+        }
+        });
+        }
+
+        async function uploadFiles(files) {
+        // Issue /mmstop and wait for the "OK" reply before starting the upload
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        showAlert('Could not stop playback before upload: ' + error.message, "ERROR", "❌", "error");
+        return;
+        }
+
+        const formData = new FormData();
+
+        Array.from(files).forEach(file => {
+        const path = file.webkitRelativePath || file.name;
+        formData.append('files[]', file, path);
+        });
+
+        let currentDirectory = currentPath.join('/');
+        if (!currentDirectory.startsWith('/')) {
+        currentDirectory = '/' + currentDirectory;
+        }
+        currentDirectory = currentDirectory.replace(/\/+/g, '/');
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `/fm-upload?path=${encodeURIComponent(currentDirectory)}`);
+
+        xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+        const percentComplete = (event.loaded / event.total) * 100;
+        progressCircle.style.background = `conic-gradient(#ffd400 ${percentComplete}%, #ff1a1a ${percentComplete}%)`;
+        progressText.textContent = `${Math.floor(percentComplete)}%`;
+        if (progressText.textContent === "100%") {
+        progressText.textContent = 'Wait!';
+        }
+        }
+        });
+
+        xhr.onload = async () => {
+        const completionMessage = document.getElementById('completion-message');
+        if (xhr.status === 200) {
+        progressText.textContent = '100%';
+        progressCircle.style.background = `conic-gradient(#ffd400 100%, #ff4d4d 100%)`;
+        completionMessage.textContent = 'Upload complete!';
+        completionMessage.style.display = 'block';
+
+        // Resume playback now that the upload has finished
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+
+        setTimeout(() => {
+        uploadModal.style.display = 'none';
+        completionMessage.style.display = 'none';
+        fetchFolderContents(currentPath);
+        }, 1500);
+        } else {
+        completionMessage.textContent = 'Upload failed!';
+        completionMessage.style.display = 'block';
+
+        // Still resume playback even though the upload failed
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+
+        setTimeout(() => {
+        uploadModal.style.display = 'none';
+        completionMessage.style.display = 'none';
+        }, 1500);
+        }
+        };
+
+        xhr.onerror = async function () {
+        try {
+        const response = JSON.parse(xhr.responseText);
+        showAlert("Upload failed: " + response.message + "\nPath: " + response.path, "ERROR", "❌", "error");
+        } catch (e) {
+        showAlert("Upload failed (could not parse response)", "ERROR", "❌", "error");
+        }
+
+        // Resume playback even though the upload connection failed
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        };
+
+        uploadModal.style.display = 'block';
+        xhr.send(formData);
+        }
+
+        function format() {
+        showConfirm("This will format your device and erase all data. Continue?", "WARNING: FORMAT DEVICE").then((confirmed) => {
+        if (confirmed) {
+        var format = new XMLHttpRequest();
+        format.open("POST", "./esp32-format", true);
+        format.onload = function () {
+        if (format.status === 200 && format.responseText.trim() === "OK") {
+        showAlert2("Formatting in progress...", "Please Wait", "ℹ️", "info");
+        checkStatus(); // ✅ START POLLING AFTER FORMAT
+        } else {
+        showAlert("Unexpected response: " + format.responseText, "ERROR", "❌", "error");
+        }
+        };
+        format.onerror = function () {
+        showAlert("Request failed.", "ERROR", "❌", "error");
+        };
+        format.send(null);
+        }
+        });
+        }
+
+
+        function checkStatus() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "./esp32-status", true);
+        xhr.onload = function () {
+        var status = xhr.responseText.trim();
+        if (status === "DONE") {
+        showAlert("Format Complete", "Success", "ℹ️", "info").then(() => {
+        setTimeout(() => {
+        location.reload();
+        }, 1000); // ✅ Wait 1 second before reloading
+        });
+        } else if (status === "ERROR") {
+        showAlert("Formwatting Failed", "ERROR", "❌", "error");
+        } else {
+        setTimeout(checkStatus, 1000); // Retry in 1 second
+        }
+        };
+        xhr.onerror = function () {
+        showAlert("Status check failed.", "ERROR", "❌", "error");
+        };
+        xhr.send();
+        }
+
+
+        function StartFTP() {
+        showConfirm("Start FTP server? This will allow file transfers.", "CONFIRM FTP START").then((confirmed) => {
+        if (confirmed) {
+        var startftp = new XMLHttpRequest();
+        startftp.open("POST", "./esp32-startftp", true);
+        startftp.onload = function () {
+        if (startftp.status === 200 && startftp.responseText.trim() === "OK") {
+        showAlert("FTP Server Started", "Information", "ℹ️", "info");
+        }
+        else if (startftp.status === 200 && startftp.responseText.trim() === "RUNNING") {
+        showAlert("FTP Server is already running", "Information", "ℹ️", "info");
+        }
+        else if (startftp.status === 500 && startftp.responseText.trim() === "FAIL") {
+        showAlert("Failed to start the FTP Server", "ERROR", "❌", "error");
+        }
+        else {
+        showAlert("Unexpected response: " + startftp.responseText, "ERROR", "❌", "error");
+        }
+        };
+        startftp.onerror = function () {
+        showAlert("Request failed.", "ERROR", "❌", "error");
+        };
+        startftp.send(null);
+        }
+        });
+        }
+
+        function StopFTP() {
+        showConfirm("Stop FTP server? This will disconnect all clients.", "CONFIRM FTP STOP").then((confirmed) => {
+        if (confirmed) {
+        var stopftp = new XMLHttpRequest();
+        stopftp.open("POST", "./esp32-stopftp", true);
+        stopftp.onload = function () {
+        if (stopftp.status === 200 && stopftp.responseText.trim() === "OK") {
+        showAlert("Stopping FTP Server", "Information", "ℹ️", "info");
+        }
+        else if (stopftp.status === 200 && stopftp.responseText.trim() === "NOTRUNNING") {
+        showAlert("The FTP Server isn't running, so there's no need to stop it", "Information", "ℹ️", "info");
+        }
+        else {
+        showAlert("Unexpected response: " + stopftp.responseText, "ERROR", "❌", "error");
+        }
+        };
+        stopftp.onerror = function () {
+        showAlert("Request failed.", "ERROR", "❌", "error");
+        };
+        stopftp.send(null);
+        }
+        });
+        }
+
+        const deleteButton = document.getElementById("delete-all-button");
+
+        document.getElementById('delete-all-button').addEventListener('click', async () => {
+        const deleteButton = document.getElementById("delete-all-button");
+        deleteButton.style.transform = "scale(0.95)";
+        setTimeout(() => deleteButton.style.transform = "scale(1)", 100);
+
+        // First get ALL items recursively
+        const allItems = await getAllFolderContentsRecursive('/');
+        const itemsToDelete = allItems.filter(item => !item.path.endsWith('/config.json'));
+
+        if (itemsToDelete.length === 0) {
+        showAlert("No files to delete (config.json is protected)", "INFO", "ℹ️", "info");
+        return;
+        }
+
+        // Show summary confirmation
+        const fileCount = itemsToDelete.filter(i => i.type === 'file').length;
+        const folderCount = itemsToDelete.filter(i => i.type === 'folder').length;
+        const confirmed = await showConfirm(
+        `This will delete ${itemsToDelete.length} items (${fileCount} files and ${folderCount} folders). Continue?`,
+        "CONFIRM MASS DELETE"
+        );
+        if (!confirmed) return;
+
+        spinner.style.display = "block";
+        deleteButton.disabled = true;
+
+        // Issue /mmstop and wait for the "OK" reply before deleting
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        showAlert('Could not stop playback before delete: ' + error.message, "ERROR", "❌", "error");
+        spinner.style.display = "none";
+        deleteButton.disabled = false;
+        return;
+        }
+
+        // Initialize counters and timer
+        let successCount = 0;
+        let errorCount = 0;
+        let lastUpdate = Date.now();
+
+        try {
+        // Show initial progress
+        showDeletionProgress(0, itemsToDelete.length, 'Starting mass deletion...');
+
+        // Process all items
+        for (let i = 0; i < itemsToDelete.length; i++) {
+        const item = itemsToDelete[i];
+
+        // Throttled progress updates
+        if (i % 10 === 0 || Date.now() - lastUpdate > 1000) {
+        showDeletionProgress(i + 1, itemsToDelete.length, item.path);
+        lastUpdate = Date.now();
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+        const success = await deleteItem(item.path, item.type);
+        if (success) {
+        successCount++;
+        } else {
+        errorCount++;
+        }
+        }
+
+        // Final progress update
+        showDeletionProgress(itemsToDelete.length, itemsToDelete.length, 'Complete');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Show final results
+        if (errorCount > 0) {
+        showAlert(`Deleted ${successCount} items successfully, but ${errorCount} items failed.`, "COMPLETED WITH ERRORS", "⚠️", "warning");
+        } else {
+        showAlert(`Successfully deleted all ${successCount} items.`, "COMPLETED", "✅", "success");
+        }
+
+        fetchFolderContents(['/']);
+        } catch (error) {
+        console.error("Error during delete-all:", error);
+        showAlert(`Deletion incomplete: ${error.message}`, "ERROR", "❌", "error");
+        } finally {
+        // Resume playback whether the mass deletion succeeded or failed
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        spinner.style.display = "none";
+        deleteButton.disabled = false;
+        hideDeletionProgress();
+        }
+        });
+
+        // Custom alert function to replace the default alert()
+        function showAlert(message, title = "ALERT", icon = "⚠️", iconClass = "warning") {
+        // First close any existing alert2 modal
+        const existingModal = document.getElementById("alertModal");
+        if (existingModal.style.display === "flex") {
+        existingModal.classList.remove("show");
+        existingModal.style.display = "none";
+        existingModal.classList.remove("no-buttons");
+        }
+
+        document.body.classList.add('modal-open');
+        return new Promise((resolve) => {
+        document.body.classList.add('modal-open');
+        const modal = document.getElementById("alertModal");
+        const messageElement = document.getElementById("alertMessage");
+        const titleElement = document.querySelector("#alertModal h2");
+        const iconElement = document.querySelector("#alertModal .modal-icon");
+
+        // Ensure buttons are visible
+        modal.classList.remove("no-buttons");
+
+        messageElement.textContent = message;
+        titleElement.textContent = title;
+        iconElement.textContent = icon;
+
+        // Remove all icon classes and add the new one
+        iconElement.className = "modal-icon";
+        iconElement.classList.add(iconClass);
+
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        const confirmBtn = document.getElementById("confirmAlert");
+
+        // Clean up any previous event listeners
+        confirmBtn.onclick = null;
+
+        confirmBtn.onclick = () => {
+        closeAlertModal();
+        resolve(true);
+        };
+        });
+        }
+
+        function showAlert2(message, title = "ALERT", icon = "⚠️", iconClass = "warning") {
+        document.body.classList.add('modal-open');
+        return new Promise((resolve) => {
+        document.body.classList.add('modal-open');
+        const modal = document.getElementById("alertModal");
+        const messageElement = document.getElementById("alertMessage");
+        const titleElement = document.querySelector("#alertModal h2");
+        const iconElement = document.querySelector("#alertModal .modal-icon");
+
+        // Add special class to hide buttons
+        modal.classList.add("no-buttons");
+
+        messageElement.textContent = message;
+        titleElement.textContent = title;
+        iconElement.textContent = icon;
+
+        // Remove all icon classes and add the new one
+        iconElement.className = "modal-icon";
+        iconElement.classList.add(iconClass);
+
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        // This alert will stay open until showAlert is called
+        // or until we manually close it
+        });
+        }
+
+        function openModal() {
+        const modal = document.getElementById("customModal");
+        modal.style.display = "flex";
+        modal.style.flexDirection = "column";
+        modal.style.alignItems = "center";
+        }
+
+        function closeAlertModal() {
+        document.body.classList.remove('modal-open'); // Add this line
+        const modal = document.getElementById("alertModal");
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.style.display = "none";
+        }, 300);
+        }
+
+        // Custom confirm function to replace the default confirm()
+        function showConfirm(message, title = "CONFIRM") {
+        return new Promise((resolve) => {
+        const modal = document.getElementById("confirmModal");
+        const messageElement = document.getElementById("confirmMessage");
+        const titleElement = document.querySelector("#confirmModal h2");
+
+        messageElement.textContent = message;
+        titleElement.textContent = title;
+
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        // Clean up any previous event listeners
+        document.getElementById("okConfirm").onclick = null;
+        document.getElementById("cancelConfirm").onclick = null;
+
+        document.getElementById("okConfirm").onclick = () => {
+        closeConfirmModal();
+        resolve(true);
+        };
+
+        document.getElementById("cancelConfirm").onclick = () => {
+        closeConfirmModal();
+        resolve(false);
+        };
+        });
+        }
+
+        function closeConfirmModal() {
+        const modal = document.getElementById("confirmModal");
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.style.display = "none";
+        }, 300);
+        }
+
+        function adjustGridColumns() {
+        const fileManager = document.getElementById('file-manager');
+        if (!fileManager) return; // Safety check
+
+        const containerWidth = fileManager.offsetWidth;
+        const itemWidth = 150; // Minimum item width (matches your CSS)
+        const gap = 20; // Gap between items (matches your CSS)
+        const columns = Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap)));
+
+        fileManager.style.gridTemplateColumns = `repeat(${columns}, minmax(${itemWidth}px, 1fr))`;
+        }
+
+        function showDeletionProgress(current, total, currentItem) {
+        const progress = document.getElementById('deletion-progress');
+        const progressText = document.getElementById('deletion-progress-text');
+        const progressBar = document.getElementById('deletion-progress-bar');
+
+        // Make sure the progress modal is on top of everything
+        progress.style.zIndex = "10001";
+        progress.style.display = 'block';
+
+        const percent = Math.round((current / total) * 100);
+        progressText.textContent = `Deleting ${current} of ${total}: ${currentItem}`;
+        progressBar.style.width = `${percent}%`;
+
+        // Add visual feedback when complete
+        if (current >= total) {
+        progressBar.style.backgroundColor = '#4CAF50'; // Green when complete
+        }
+        }
+
+        function hideDeletionProgress() {
+        const progress = document.getElementById('deletion-progress');
+        progress.style.display = 'none';
+        // Reset progress bar color
+        document.getElementById('deletion-progress-bar').style.backgroundColor = '#4CAF50';
+        }
+
+        // Prevent default drag behaviors (opening files in new tab)
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        document.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();  // Critical for preventing browser defaults
+        }, false);
+        });
+
+        // Highlight the whole page when dragging
+        /*
+        document.addEventListener('dragover', () => {
+        document.body.classList.add('dragging');
+        });
+        */
+
+        document.addEventListener('dragleave', () => {
+        document.body.classList.remove('dragging');
+        });
+
+        // Handle actual drop
+        document.addEventListener('drop', (e) => {
+        document.body.classList.remove('dragging');
+
+        if (e.dataTransfer.files.length) {
+        uploadFiles(e.dataTransfer.files);
+        }
+        });
+
+        // Initialize grid columns on page load
+        document.addEventListener('DOMContentLoaded', function () {
+        adjustGridColumns();
+
+        // Also call it after your initial file loading is complete
+        // You might want to add this inside your fetchFolderContents success callback
+        });
+
+        // Adjust columns when window is resized
+        window.addEventListener('resize', function () {
+        adjustGridColumns();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 File Editor</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📁</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-editor">
+    <div class="page-card">
+        <div class="header">
+            <div class="dropdown">
+                <div class="dropbtn"><h1>☰ File Editor</h1></div>
+                <div class="dropdown-content">
+                    <a href="/" class="tooltip">
+                        Payloads
+                        <span class="tooltiptext">Upload payload files to the ESP32</span>
+                    </a>
+                    <a href="/file" class="tooltip">
+                        File Manager
+                        <span class="tooltiptext">Manage your files directly on the ESP32</span>
+                    </a>
+                    <a href="/ota" class="tooltip">
+                        Update Firmware
+                        <span class="tooltiptext">Update your ESP32 firmware from an online server or from a local firmware file</span>
+                    </a>
+                    <a href="/config" class="tooltip">
+                        Configure Settings
+                        <span class="tooltiptext">Alter your WiFi/FTP/AP and other settings</span>
+                    </a>
+                    <a href="/downloader" class="tooltip">
+                        TAR Installer
+                        <span class="tooltiptext">Downloads TAR files to PSRAM and extracts them to your flash FFAT partiton</span>
+                    </a>
+                    <a href="/info" class="tooltip">
+                        Information
+                        <span class="tooltiptext">Show information about the ESP32-Sx chip</span>
+                    </a>
+                    <a href="javascript:openModal();" class="tooltip">
+                        About
+                        <span class="tooltiptext">Information about this program</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+        	<h4>✎ Select a file to edit</h4>
+        	<div class="file-selector">
+        		<select id="filePicker"></select>
+        		<button class="button buttonsave" id="saveButton" onclick="saveFile()">Save</button><br>
+        	</div>
+        	<div class="file-info">
+        		Editing - <span id="currentFileName">None</span>(<span id="fileSize">0</span> KB)
+        	</div>
+        </div>
+        <div class="section">
+        	<div class="search-bar" id="searchBar">
+        		<div class="search-input-wrapper">
+        			<input type="text" id="searchInput" class="search-input" placeholder="Find...">
+        			<button class="search-icon-btn" id="searchIconBtn" title="Search (Enter)">🔍</button>
+        		</div>
+        		<span class="search-count" id="searchCount">0/0</span>
+        		<button class="search-btn" id="prevMatchBtn" title="Previous match (Shift+Enter)">▲</button>
+        		<button class="search-btn" id="nextMatchBtn" title="Next match (Enter)">▼</button>
+        		<label class="search-case-label" title="Match case">
+        			<input type="checkbox" id="matchCaseCheckbox"> Aa
+        		</label>
+        		<input type="text" id="replaceInput" class="search-input" placeholder="Replace with...">
+        		<button class="search-btn" id="replaceBtn" title="Replace current match">Replace</button>
+        		<button class="search-btn" id="replaceAllBtn" title="Replace all matches">Replace All</button>
+        	</div>
+        	<div class="loading-container" id="loadingContainer">
+        		<div class="spinner"></div>
+        		<div class="loading-text" id="loadingText">Loading...</div>
+        	</div>
+        		<div class="status-message" id="statusMessage"></div>
+        		<textarea id="textArea" placeholder="Select a file..."></textarea>
+        </div>
+        <footer class="footer-card">
+            <div class="footer-line">
+                <a href="/" title="Go Home">Press Ctrl+S to Save</a>
+            </div>
+        </footer>
+    </div>
+
+    <div id="customModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+		background: #fff; color: #000; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #000; z-index: 9999;">
+        <h2>About</h2>
+        <p>ESP32 File Editor with PSRAM support</p>
+        <p>Coded By MrDude<br><br><br></p>
+        <button onclick="closeModal()" style="display: block; margin: 0 auto;">OK</button>
+    </div>
+    <script>
+        const ALLOWED_EXTENSIONS = ['txt', 'html', 'js', 'mjs', 'css', 'cache'];
+        let currentlyLoadedFile = '';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+        await listFiles();
+
+        // Set up auto-load when files are selected
+        document.getElementById('filePicker').addEventListener('change', handleFileSelection);
+
+        // Auto-load the first file if one exists
+        if (document.getElementById('filePicker').options.length > 0) {
+        await handleFileSelection();
+        }
+
+        // Set up keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveFile();
+        }
+        });
+
+        // Set up search bar
+        initSearch();
+        });
+
+        // ---------------------------------------------------------------
+        // Find / Replace within the loaded file
+        // ---------------------------------------------------------------
+        let searchMatches = [];   // start indices of each match
+        let searchIndex = -1;     // index into searchMatches of the "current" match
+
+        function initSearch() {
+        const searchInput = document.getElementById('searchInput');
+        const matchCaseCheckbox = document.getElementById('matchCaseCheckbox');
+
+        // While typing, just recompute the match count — don't move focus
+        // or the selection, so the user can keep typing uninterrupted.
+        searchInput.addEventListener('input', () => {
+        updateMatches();
+        updateSearchCount();
+        });
+
+        matchCaseCheckbox.addEventListener('change', () => {
+        updateMatches();
+        updateSearchCount();
+        });
+
+        // Pressing Enter (or clicking the magnifying glass) is the
+        // explicit "go search" action that jumps into the textarea.
+        searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+        e.preventDefault();
+        e.shiftKey ? goToMatch(-1) : goToMatch(1);
+        }
+        });
+
+        document.getElementById('searchIconBtn').addEventListener('click', () => goToMatch(1));
+        document.getElementById('nextMatchBtn').addEventListener('click', () => goToMatch(1));
+        document.getElementById('prevMatchBtn').addEventListener('click', () => goToMatch(-1));
+        document.getElementById('replaceBtn').addEventListener('click', replaceCurrentMatch);
+        document.getElementById('replaceAllBtn').addEventListener('click', replaceAllMatches);
+
+        updateSearchCount();
+        }
+
+        // Recompute all match positions for the current search term
+        function updateMatches() {
+        const term = document.getElementById('searchInput').value;
+        const text = document.getElementById('textArea').value;
+        searchMatches = [];
+        searchIndex = -1;
+
+        if (!term) {
+        updateSearchCount();
+        return;
+        }
+
+        const matchCase = document.getElementById('matchCaseCheckbox').checked;
+        const haystack = matchCase ? text : text.toLowerCase();
+        const needle = matchCase ? term : term.toLowerCase();
+
+        let pos = 0;
+        while (true) {
+        const found = haystack.indexOf(needle, pos);
+        if (found === -1) break;
+        searchMatches.push(found);
+        pos = found + needle.length;
+        }
+
+        updateSearchCount();
+        }
+
+        // direction: 1 = next, -1 = previous, 0 = jump to a specific index
+        function goToMatch(direction, forceRecalc) {
+        if (forceRecalc || searchMatches.length === 0) {
+        updateMatches();
+        }
+        if (searchMatches.length === 0) {
+        updateSearchCount();
+        return;
+        }
+
+        if (direction === 0 || searchIndex === -1) {
+        searchIndex = 0;
+        } else {
+        searchIndex = (searchIndex + direction + searchMatches.length) % searchMatches.length;
+        }
+
+        selectMatch(searchIndex);
+        }
+
+        function selectMatch(idx) {
+        const textArea = document.getElementById('textArea');
+        const term = document.getElementById('searchInput').value;
+        const start = searchMatches[idx];
+        const end = start + term.length;
+
+        textArea.focus();
+        textArea.setSelectionRange(start, end);
+
+        // Scroll the match into view within the textarea
+        scrollTextAreaToSelection(textArea, start);
+
+        updateSearchCount();
+        }
+
+        // Scrolls a textarea so the given character offset is visible,
+        // since setSelectionRange alone doesn't always scroll into view.
+        function scrollTextAreaToSelection(textArea, charIndex) {
+        const value = textArea.value;
+        const lineNumber = value.substring(0, charIndex).split('\n').length - 1;
+        const lineHeight = parseInt(window.getComputedStyle(textArea).lineHeight) || 18;
+        const paddingTop = parseInt(window.getComputedStyle(textArea).paddingTop) || 0;
+
+        const targetScroll = (lineNumber * lineHeight) - (textArea.clientHeight / 2) + paddingTop;
+        textArea.scrollTop = Math.max(0, targetScroll);
+        }
+
+        function updateSearchCount() {
+        const countEl = document.getElementById('searchCount');
+        if (searchMatches.length === 0) {
+        countEl.textContent = '0/0';
+        } else {
+        countEl.textContent = `${searchIndex + 1}/${searchMatches.length}`;
+        }
+        }
+
+        function replaceCurrentMatch() {
+        if (searchMatches.length === 0 || searchIndex === -1) {
+        showStatus('No match selected', false);
+        return;
+        }
+
+        const textArea = document.getElementById('textArea');
+        const term = document.getElementById('searchInput').value;
+        const replacement = document.getElementById('replaceInput').value;
+        const start = searchMatches[searchIndex];
+        const end = start + term.length;
+
+        textArea.value = textArea.value.substring(0, start) + replacement + textArea.value.substring(end);
+
+        updateMatches();
+        if (searchMatches.length > 0) {
+        // Try to stay near where we were
+        searchIndex = Math.min(searchIndex, searchMatches.length - 1);
+        selectMatch(searchIndex);
+        } else {
+        updateSearchCount();
+        }
+        }
+
+        function replaceAllMatches() {
+        const term = document.getElementById('searchInput').value;
+        if (!term) return;
+
+        const textArea = document.getElementById('textArea');
+        const replacement = document.getElementById('replaceInput').value;
+        const matchCase = document.getElementById('matchCaseCheckbox').checked;
+
+        const flags = matchCase ? 'g' : 'gi';
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, flags);
+
+        const count = (textArea.value.match(regex) || []).length;
+        textArea.value = textArea.value.replace(regex, replacement);
+
+        updateMatches();
+        showStatus(`Replaced ${count} occurrence${count === 1 ? '' : 's'}`, true);
+        }
+
+        function openModal() {
+        const modal = document.getElementById("customModal");
+        modal.style.display = "flex";
+        modal.style.flexDirection = "column";
+        modal.style.alignItems = "center";
+        }
+
+        function closeModal() {
+        document.getElementById('customModal').style.display = 'none';
+        }
+
+        function showLoading(message) {
+        document.getElementById('loadingText').textContent = message;
+        document.getElementById('loadingContainer').style.display = 'flex';
+        }
+
+        function hideLoading() {
+        document.getElementById('loadingContainer').style.display = 'none';
+        }
+
+        function showStatus(message, isSuccess) {
+        const statusElement = document.getElementById('statusMessage');
+        statusElement.textContent = message;
+        statusElement.className = isSuccess ? 'status-message status-success' : 'status-message status-error';
+        statusElement.style.display = 'block';
+
+        setTimeout(() => {
+        statusElement.style.display = 'none';
+        }, 1000);
+        }
+
+        // Combined function to handle file selection
+        async function handleFileSelection() {
+        try {
+        await updateFileInfo();
+        await loadFile();
+        } catch (err) {
+        console.error("Error handling file selection:", err);
+        showStatus("Error loading selected file", false);
+        }
+        }
+
+        async function listFiles() {
+        try {
+        showLoading("Loading file list...");
+        const res = await fetch('/psram-list-files');
+        const files = await res.json();
+        const select = document.getElementById('filePicker');
+
+        select.innerHTML = ''; // Clear existing options
+
+        // Group files by directory
+        const groupedFiles = {};
+
+        files.forEach(filePath => {
+        // Normalize path (handle leading/trailing slashes)
+        const normalizedPath = filePath.replace(/^\/+|\/+$/g, '');
+        const parts = normalizedPath.split('/');
+        const fileName = parts.pop(); // Extract filename
+        const directory = parts.join('/'); // Rebuild directory path
+
+        if (!groupedFiles[directory]) {
+        groupedFiles[directory] = [];
+        }
+        groupedFiles[directory].push(fileName);
+        });
+
+        // Sort directories alphabetically (excluding root)
+        const sortedDirs = Object.keys(groupedFiles).filter(dir => dir !== '').sort();
+
+        // --- Create "Root" folder optgroup ---
+        const rootOptgroup = document.createElement('optgroup');
+        rootOptgroup.label = '📁 Root';
+        select.appendChild(rootOptgroup);
+
+        // Add root files to the "Root" folder
+        if (groupedFiles['']) {
+        groupedFiles[''].sort().forEach(file => {
+        const option = document.createElement('option');
+        option.value = file; // Root files have no directory prefix
+        option.textContent = '📄 ' + file;
+        rootOptgroup.appendChild(option);
+        });
+        } else {
+        // Optional: Add a placeholder if root is empty
+        const option = document.createElement('option');
+        option.disabled = true;
+        option.textContent = '(No files in root)';
+        rootOptgroup.appendChild(option);
+        }
+
+        // Add other directories and their files
+        sortedDirs.forEach(dir => {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = '📁 ' + dir;
+        select.appendChild(optgroup);
+
+        groupedFiles[dir].sort().forEach(file => {
+        const option = document.createElement('option');
+        option.value = `${dir}/${file}`;
+        option.textContent = '📄 ' + file;
+        optgroup.appendChild(option);
+        });
+        });
+
+        showStatus("File list loaded", true);
+        } catch (err) {
+        console.error("File list error:", err);
+        showStatus("Error loading file list", false);
+        } finally {
+        hideLoading();
+        }
+        }
+
+
+        async function updateFileInfo() {
+        const filename = document.getElementById('filePicker').value;
+        currentlyLoadedFile = filename;
+        try {
+        const res = await fetch(`/psram-file-size?file=${encodeURIComponent(filename)}`);
+        const info = await res.json();
+        document.getElementById('currentFileName').textContent = filename;
+        document.getElementById('fileSize').textContent = (info.size / 1024).toFixed(2);
+        } catch (err) {
+        console.error("File info error:", err);
+        throw err;
+        }
+        }
+
+        async function loadFile() {
+        const filename = document.getElementById('filePicker').value;
+        showLoading("Loading file...");
+        try {
+        const res = await fetch(`/psram-read?file=${encodeURIComponent(filename)}`);
+        const buffer = await res.arrayBuffer();
+        const decoder = new TextDecoder('utf-8');
+        document.getElementById('textArea').value = decoder.decode(buffer);
+        currentlyLoadedFile = filename;
+        showStatus("File loaded successfully", true);
+        } catch (err) {
+        console.error("Load error:", err);
+        showStatus("Error loading file", false);
+        throw err;
+        } finally {
+        hideLoading();
+        }
+        }
+
+        async function saveFile() {
+        const text = document.getElementById('textArea').value;
+        const saveButton = document.getElementById('saveButton');
+
+        showLoading("Saving file...");
+        saveButton.disabled = true;
+
+        // Add this before saving:
+        console.log("Original text:", Array.from(text).map(c =>
+        c.charCodeAt(0).toString(16)).join(' '));
+
+        try {
+        // Clean the text content before sending
+        const cleanText = text
+        //.replace(/[\x00-\x1F\x7F-\x9F]/g, '') // Remove control chars
+        //.replace(/\u2028|\u2029/g, '') // Remove line/paragraph separators
+        .normalize('NFC'); // Normalize unicode
+
+        const payload = {
+        filename: currentlyLoadedFile,
+        content: cleanText
+        };
+
+        console.log("Sanitized payload:", payload);
+
+        const res = await fetch('/psram-save', {
+        method: 'POST',
+        headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Content-Type-Options': 'nosniff'
+        },
+        body: JSON.stringify(payload)
+        });
+
+        const result = await res.text();
+        showStatus(result, true);
+        } catch (err) {
+        console.error("Save error:", err);
+        showStatus(`Save failed: ${err.message}`, false);
+        } finally {
+        hideLoading();
+        saveButton.disabled = false;
+        }
+        }
+    </script>
+</body>
+</html>

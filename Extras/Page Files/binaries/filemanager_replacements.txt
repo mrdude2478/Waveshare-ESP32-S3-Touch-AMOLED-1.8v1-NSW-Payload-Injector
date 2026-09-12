@@ -1,0 +1,10 @@
+Start FTP server?This will allow file transfers@Start FTP server? This will allow file transfers
+Stop FTP server?This will disconnect all clients@Stop FTP server? This will disconnect all clients
+Nofilesfound@No files found
+Are you sure you want to delete the folder"${folderName}"@Are you sure you want to delete the folder "${folderName}"
+Are you sure you want to delete"${fileName}"@Are you sure you want to delete "${fileName}"
+Deleting${current}of${total}:${currentItem}@Deleting ${current} of ${total}: ${currentItem}
+Deletingitems@Deleting items
+Successfully deleted all${successCount}items@Successfully deleted all ${successCount} items
+This will delete${itemsToDelete.length}items(${fileCount}files and${folderCount}folders@This will delete ${itemsToDelete.length} items (${fileCount} files and ${folderCount} folders
+Github@Go Home

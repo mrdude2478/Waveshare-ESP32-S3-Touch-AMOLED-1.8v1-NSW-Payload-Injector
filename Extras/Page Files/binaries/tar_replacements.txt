@@ -1,0 +1,10 @@
+example.com/FlashFiles.tar@raw.githubusercontent.com/example/example.github.io/refs/heads/main/ESP32-Flasher/flash/webfiles.tar
+-${Math@: ${Math
+/${Math@/ ${Math
+KB(@KB (
+-${data@: ${data
+}/${@} / ${
+|'None'@| 'None'
+Waitingtostart@Waiting to start
+DOWNLOADINGTARFILE@DOWNLOADING TAR FILE
+Preparingdownload@Preparing download

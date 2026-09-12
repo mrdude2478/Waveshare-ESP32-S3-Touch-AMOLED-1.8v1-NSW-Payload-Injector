@@ -1,0 +1,6 @@
+x86_64-w64-mingw32-g++ -o binconvert binconvert.cpp -static
+x86_64-w64-mingw32-strip binconvert.exe
+
+or
+
+cl /EHsc /W4 /O2 binconvert.cpp

@@ -1,0 +1,2 @@
+cl /EHsc /std:c++17 font_to_arduino.cpp
+

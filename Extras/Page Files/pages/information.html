@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 System Information</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>ℹ️</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-info">
+    <div class="page-card">
+        <div class="header">
+            <div class="dropdown">
+            	<a href="/">
+                <div class="dropbtn"><h1>☰ System Information</h1></div>
+              </a>
+              <div class="dropdown-content">
+                		<a href="/" class="tooltip">
+                        Payloads
+                        <span class="tooltiptext">Upload payload files to the ESP32</span>
+                    </a>
+                    <a href="/file" class="tooltip">
+                        File Manager
+                        <span class="tooltiptext">Manage your files directly on the ESP32</span>
+                    </a>
+                    <a href="/edit" class="tooltip">
+                        File Editor
+                        <span class="tooltiptext">Edit your files directly on the ESP32</span>
+                    </a>
+                    <a href="/ota" class="tooltip">
+                        Update Firmware
+                        <span class="tooltiptext">Update your ESP32 firmware from an online server or from a local firmware file</span>
+                    </a>
+                    <a href="/config" class="tooltip">
+                        Configure Settings
+                        <span class="tooltiptext">Alter your WiFi/FTP/AP and other settings</span>
+                    </a>
+                    <a href="/downloader" class="tooltip">
+                        TAR Installer
+                        <span class="tooltiptext">Downloads TAR files to PSRAM and extracts them to your flash FFAT partiton</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>ℹ️ System Information</h2>
+            <div id="systemInfoContent">
+                <div style="text-align: center; margin: 20px 0; width: 100%;">
+                    <div class="spinner" style="margin: 0 auto;"></div>
+                    <p>Loading system information...</p>
+                </div>
+            </div>
+            <div class="button-row2">
+                <button id="refreshInfoBtn">Refresh</button>
+            </div>
+        </div>
+
+        <footer class="footer-card">
+            <div class="footer-line">
+                <a href="/" title="Go Home">Go Home</a>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const systemInfoContent = document.getElementById('systemInfoContent');
+        const refreshInfoBtn = document.getElementById('refreshInfoBtn');
+
+        function loadSystemInfo() {
+            systemInfoContent.innerHTML = `
+                <div style="text-align: center; margin: 20px 0; width: 100%;">
+                    <div class="spinner" style="margin: 0 auto;"></div>
+                    <p>Loading system information...</p>
+                </div>
+            `;
+
+            fetch('/system-info')
+                .then(response => response.json())
+                .then(data => {
+                    const html = `
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;" id="batteryCard">
+                            <div class="battery-header">
+                                <h3 style="margin: 0;">🔋 Battery</h3>
+                                <span id="batteryStateBadge" class="battery-status-badge">—</span>
+                            </div>
+                            <div class="battery-bar-track">
+                                <div id="batteryBarFill" class="battery-bar-fill"></div>
+                            </div>
+                            <div id="batteryPercentLabel" class="battery-percent-label">—</div>
+                            <p><strong>Voltage:</strong> <span id="batteryVoltageValue">—</span></p>
+                            <p><strong>Battery Connected:</strong> <span id="batteryConnectedValue">—</span></p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>Device</h3>
+                            <p><strong>Chip Model:</strong> ${data.system.chip_model}</p>
+                            <p><strong>Chip Revision:</strong> ${data.system.chip_revision}</p>
+                            <p><strong>Cores:</strong> ${data.chip.cores}</p>
+                            <p><strong>CPU Frequency:</strong> ${data.system.cpu_freq}</p>
+                            <p><strong>Flash Mode:</strong> ${data.chip.flash_mode}</p>
+                            <p><strong>Flash Size:</strong> ${data.system.flash_size}</p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>Network Information</h3>
+                            <p><strong>IP Address:</strong> ${data.server.ip}</p>
+                            <p><strong>WiFi STA MAC:</strong> ${data.mac.wifi}</p>
+                            <p><strong>WiFi AP MAC:</strong> ${data.mac.ap}</p>
+                            <p><strong>Base MAC:</strong> ${data.mac.base}</p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>System Memory</h3>
+                            <p><strong>Heap Total:</strong> ${data.memory.heap.total}</p>
+                            <p><strong>Heap Free:</strong> ${data.memory.heap.free}</p>
+                            <p><strong>Heap Max Alloc:</strong> ${data.memory.heap.max_alloc}</p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>PSRAM Memory</h3>
+                            <p><strong>PSRAM Total:</strong> ${data.memory.psram.total}</p>
+                            <p><strong>PSRAM Free:</strong> ${data.memory.psram.free}</p>
+                            <p><strong>PSRAM Max Alloc:</strong> ${data.memory.psram.max_alloc}</p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>Storage</h3>
+                            <p><strong>Total Space:</strong> ${data.fs.total}</p>
+                            <p><strong>Free Space:</strong> ${data.fs.free}</p>
+                            <p><strong>Used Space:</strong> ${data.fs.used}</p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>USB Information</h3>
+                            ${data.system.chip_model !== "ESP32-S2" ? `
+                                <p><strong>CDC Enabled:</strong> ${data.usb.cdc_enabled ? '✅ Yes' : '❌ No'}</p>
+                                <p><strong>Serial Connected:</strong> ${data.usb.serial_connected ? '✅ Yes' : '❌ No'}</p>
+                                <p><strong>USB VID:</strong> 0x${data.usb.vid.toString(16).toUpperCase()}</p>
+                                <p><strong>USB PID:</strong> 0x${data.usb.pid.toString(16).toUpperCase()}</p>
+                            ` : ''}
+                            <p><strong>Product:</strong> ${data.usb.product_name}</p>
+                            <p><strong>Manufacturer:</strong> ${data.usb.manufacturer}</p>
+                        </div>
+                        <div class="sys-info-group" style="margin: 20px auto; max-width: 500px;">
+                            <h3>Firmware Information</h3>
+                            <p><strong>Free Space:</strong> ${data.sketch.free_space}</p>
+                            <p><strong>Sketch Size:</strong> ${data.sketch.size}</p>
+                            <p><strong>MD5 Hash:</strong> ${data.sketch.md5}</p>
+                            <p><strong>Compile Date:</strong> ${data.system.compile_date}</p>
+                            <p><strong>SDK Version:</strong> ${data.system.sdk_version}</p>
+                        </div>
+                    `;
+
+                    systemInfoContent.innerHTML = html;
+                    updateBatteryUI(data.battery);
+                })
+                .catch(error => {
+                    systemInfoContent.innerHTML = `
+                        <div class="sys-info-group" style="text-align: center; color: #ff4d4d;">
+                            <h3>Error</h3>
+                            <p>Failed to load system information</p>
+                            <p><small>Error: ${error.message}</small></p>
+                        </div>
+                    `;
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', loadSystemInfo);
+        refreshInfoBtn.addEventListener('click', loadSystemInfo);
+
+        // ---- Battery status: live-updating card ----
+        // Patches only the battery card's own elements, so it doesn't touch
+        // the rest of the page (no spinner flash, no scroll jump) whenever
+        // it refreshes. Safe to call before the card has rendered yet -
+        // it just no-ops until the elements exist.
+        const BATTERY_STATE_LABELS = {
+            charging: 'Charging',
+            vbus: 'Charger Connected',
+            battery: 'On Battery',
+            no_battery: 'No Battery',
+            unavailable: 'Unavailable'
+        };
+
+        function updateBatteryUI(battery) {
+            const badge = document.getElementById('batteryStateBadge');
+            const fill = document.getElementById('batteryBarFill');
+            const percentLabel = document.getElementById('batteryPercentLabel');
+            const voltageValue = document.getElementById('batteryVoltageValue');
+            const connectedValue = document.getElementById('batteryConnectedValue');
+
+            if (!battery || !badge || !fill || !percentLabel || !voltageValue || !connectedValue) {
+                return;
+            }
+
+            const state = battery.state || 'unavailable';
+            badge.textContent = BATTERY_STATE_LABELS[state] || state;
+            badge.className = 'battery-status-badge state-' + state;
+
+            const havePercent = battery.pmu_found && battery.connected;
+            const pct = Math.max(0, Math.min(100, battery.percent || 0));
+
+            fill.style.width = havePercent ? pct + '%' : '0%';
+            fill.className = 'battery-bar-fill' +
+                (pct <= 20 ? ' level-low' : pct <= 50 ? ' level-medium' : '');
+            percentLabel.textContent = havePercent ? `${pct}%` : '—';
+
+            voltageValue.textContent = battery.connected ? `${battery.voltage_mv} mV` : 'N/A';
+            connectedValue.textContent = !battery.pmu_found
+                ? 'PMU not found'
+                : (battery.connected ? 'Yes' : 'No');
+        }
+
+        function pollBatteryStatus() {
+            // Deliberately hits the lightweight /battery-status endpoint
+            // rather than /system-info - the latter also computes the
+            // sketch MD5 and walks the filesystem, which are expensive
+            // enough to cause an audible/visible hitch if done every 10s.
+            fetch('/battery-status')
+                .then(response => response.json())
+                .then(data => updateBatteryUI(data))
+                .catch(() => {
+                    // Transient poll failure - just try again on the next tick.
+                });
+        }
+
+        setInterval(pollBatteryStatus, 10000);
+
+        // Dropdown menu behaviour (same pattern as other pages)
+        let dropdownTimer;
+        const dropdownEl = document.querySelector('.dropdown');
+        const dropdownContentEl = document.querySelector('.dropdown-content');
+
+        dropdownEl.addEventListener('mouseenter', function () {
+            clearTimeout(dropdownTimer);
+            dropdownContentEl.style.display = 'block';
+        });
+
+        dropdownEl.addEventListener('mouseleave', function () {
+            dropdownTimer = setTimeout(() => {
+                dropdownContentEl.style.display = 'none';
+            }, 300);
+        });
+
+        dropdownContentEl.addEventListener('mouseenter', function () {
+            clearTimeout(dropdownTimer);
+        });
+
+        dropdownContentEl.addEventListener('mouseleave', function () {
+            dropdownTimer = setTimeout(() => {
+                dropdownContentEl.style.display = 'none';
+            }, 300);
+        });
+    </script>
+</body>
+</html>

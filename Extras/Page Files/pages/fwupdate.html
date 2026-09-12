@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>
+        ESP32 OTA Firmware Update
+    </title>
+    <link href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;💾&lt;/text&gt;&lt;/svg&gt;" rel="icon" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-card">
+        <div class="header">
+            <div class="dropdown">
+                <div class="dropbtn"><h1>☰ Firmware Update</h1></div>
+                <div class="dropdown-content">
+                		<a href="/" class="tooltip">
+                        Payloads
+                        <span class="tooltiptext">Upload payload files to the ESP32</span>
+                    </a>
+                    <a href="/file" class="tooltip">
+                        File Manager
+                        <span class="tooltiptext">Manage your files directly on the ESP32</span>
+                    </a>
+                    <a href="/edit" class="tooltip">
+                        File Editor
+                        <span class="tooltiptext">Edit your files directly on the ESP32</span>
+                    </a>
+                    <a href="/config" class="tooltip">
+                        Configure Settings
+                        <span class="tooltiptext">Alter your WiFi/FTP/AP and other settings</span>
+                    </a>
+                    <a href="/downloader" class="tooltip">
+                        TAR Installer
+                        <span class="tooltiptext">Downloads TAR files to PSRAM and extracts them to your flash FFAT partiton</span>
+                    </a>
+                    <a href="/info" class="tooltip">
+                        Information
+                        <span class="tooltiptext">Show information about the ESP32-Sx chip</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <div class="form-group">
+                <h2>📁 Upload Firmware from PC</h2>
+                <form id="upload-form">
+                    <div class="button-row">
+                            <input accept=".bin" id="file" type="file" />
+                            <label class="file-input-label" for="file">Choose Firmware File</label>
+                        <button type="submit">Upload and Flash</button>
+                    </div>
+                    <div class="file-name" id="file-name"></div>
+                </form>
+            </div>
+            <div class="form-group">
+                <div class="status-box">
+                    <h3 id="status-label">
+                        Status: Idle
+                    </h3>
+                    <div class="fwupdate-progress-container">
+                        <div class="progress-bar" id="progress-bar">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <div class="form-group">
+                <h2>
+                    🌐 Update from Online URL
+                </h2>
+                <input id="firmware-url" placeholder="http://yourserver.com/firmware.bin" type="text" />
+                <div class="button-row">
+                    <!-- New container for side-by-side buttons -->
+                    <button onclick="startOnlineUpdate()">
+                        Start Online Update
+                    </button>
+                    <button class="secondary-btn" onclick="checkFirmwareUpdate()">
+                        Check Online Version
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <div class="form-group">
+                <h2>
+                    🔄 Device Control
+                </h2>
+                <button id="reboot-btn" onclick="handleReboot()">
+                    Reboot Device
+                </button>
+            </div>
+        </div>
+        <footer class="footer-card">
+            <div class="footer-line" id="version">
+                <a href="/" title="Go Home">Go Home</a>
+            </div>
+        </footer>
+    </div>
+    <!-- Reboot Confirmation Modal -->
+    <div class="custom-modal" id="rebootModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">
+                    ⚠️
+                </div>
+                <h2>
+                    CONFIRM REBOOT
+                </h2>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to reboot the device?
+                </p>
+                <p class="warning-text">
+                    This will temporarily interrupt any ongoing operations.
+                </p>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-button cancel" id="cancelReboot">
+                    <span class="button-icon">
+                        ✖
+                    </span>
+                    CANCEL
+                </button>
+                <button class="modal-button delete" id="confirmReboot">
+                    REBOOT
+                    <span class="button-icon">
+                        🔃
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const uploadForm = document.getElementById("upload-form");
+        const fileInput = document.getElementById("file");
+        const statusLabel = document.getElementById("status-label");
+        const progressBar = document.getElementById("progress-bar");
+        const rebootBtn = document.getElementById("reboot-btn");
+        var githubFirmwareURL = "";
+        let isFlashingFile = false;   // <-- NEW: tracks active local upload
+
+        // Send a GET request to one of the multimedia control endpoints (/mmstop or /mmstart)
+        // and confirm it replied with "OK". Throws on any failure.
+        async function callMultimediaControl(endpoint) {
+            const response = await fetch(endpoint);
+
+            if (!response.ok) {
+                throw new Error(endpoint + ' request failed: ' + response.statusText);
+            }
+
+            const text = (await response.text()).trim();
+            console.log(endpoint + ' response:', JSON.stringify(text));
+
+            if (text !== 'OK') {
+                throw new Error('Unexpected ' + endpoint + ' response: ' + text);
+            }
+        }
+
+        // --- Helpers to show/hide the status box without touching CSS ---
+        function showStatusBox() {
+            const box = document.querySelector('.status-box');
+            if (box) box.style.display = 'block';
+        }
+
+        function hideStatusBox() {
+            const box = document.querySelector('.status-box');
+            if (box) box.style.display = 'none';
+        }
+
+        // --- NEW: Show filename and ready message as soon as a file is chosen ---
+        fileInput.addEventListener('change', function () {
+            if (this.files && this.files[0]) {
+                showStatusBox();
+                statusLabel.textContent = this.files[0].name + " - ready to flash";
+                progressBar.style.width = "0%";
+            }
+        });
+
+        // Handle file upload
+        uploadForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return showAlert("Please select a firmware file", "WARNING", "⚠️", "warning");
+
+        showStatusBox();
+        statusLabel.textContent = "Status: Stopping playback...";
+        rebootBtn.disabled = true;
+
+        // Issue /mmstop and wait for the "OK" reply before flashing.
+        // No need to call /mmstart on success - once flashing finishes, the
+        // reboot confirmation popup appears; if the user confirms it the
+        // device reboot resumes multimedia on its own, and if they cancel
+        // it, we call /mmstart from handleReboot() below.
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        statusLabel.textContent = "Status: Could not stop playback";
+        rebootBtn.disabled = false;
+        showAlert('Could not stop playback before flashing: ' + error.message, "ERROR", "❌", "error");
+        return;
+        }
+
+        isFlashingFile = true;  // <-- NEW: mark upload in progress
+        statusLabel.textContent = "Status: Preparing upload...";
+
+        const formData = new FormData();
+        formData.append("update", file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+        const percent = (e.loaded / e.total) * 100;
+        progressBar.style.width = percent + "%";
+        statusLabel.textContent = `Status: Uploading... ${percent.toFixed(1)}%`;
+        }
+        });
+
+        xhr.onload = async () => {
+        isFlashingFile = false;  // <-- NEW: upload finished
+        if (xhr.status === 200) {
+        statusLabel.textContent = "Status: Upload complete. Flashing now...";
+        fetch("/esp32-update-local");
+        } else {
+        statusLabel.textContent = "Status: Upload failed";
+        rebootBtn.disabled = false;
+
+        // Upload failed, so flashing/reboot won't happen - resume playback
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        }
+        };
+
+        xhr.onerror = async () => {
+        isFlashingFile = false;  // <-- NEW: upload failed
+        statusLabel.textContent = "Status: Upload failed (network error)";
+        rebootBtn.disabled = false;
+
+        // Upload failed, so flashing/reboot won't happen - resume playback
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        };
+
+        xhr.open("POST", "/upload-ota");
+        xhr.send(formData);
+        };
+
+        // Handle online update
+        async function startOnlineUpdate() {
+        showStatusBox();  // <-- FIXED: always show status when starting an online update
+
+        const url = document.getElementById("firmware-url").value;
+        if (!url.startsWith("http")) {
+        showAlert("Please enter a valid URL starting with http:// or https://", "WARNING", "⚠️", "warning");
+        clearFirmwareUrl();
+        return;
+        }
+
+        // Save the URL to localStorage
+        saveFirmwareUrl(url);
+
+        statusLabel.textContent = "Status: Starting OTA download...";
+        rebootBtn.disabled = true;
+
+        try {
+        const response = await fetch("/esp32-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+        });
+
+        if (!response.ok) {
+        statusLabel.textContent = "Status: Update failed to start";
+        rebootBtn.disabled = false;
+        return;
+        }
+
+        // The URL replied and the device accepted the download request -
+        // stop playback while the firmware downloads. No need to call
+        // /mmstart on success - once the download/flash finishes, the reboot
+        // confirmation popup appears; if the user confirms it the device
+        // reboot resumes multimedia on its own, and if they cancel it, or if
+        // the URL later turns out to be unreachable / the update fails, we
+        // call /mmstart from those handlers below.
+        try {
+        await callMultimediaControl('/mmstop');
+        } catch (error) {
+        console.error('Error issuing /mmstop:', error);
+        showAlert('Could not stop playback before update: ' + error.message, "ERROR", "❌", "error");
+        }
+        } catch (err) {
+        statusLabel.textContent = "Status: Update failed to start";
+        rebootBtn.disabled = false;
+        }
+        }
+
+        // Handle reboot
+        async function handleReboot() {
+        const confirmed = await showConfirm("Are you sure you want to reboot the device?", "CONFIRM REBOOT");
+        if (!confirmed) {
+        // User cancelled the reboot - re-enable the button and resume playback since the device won't restart
+        rebootBtn.disabled = false;
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        return;
+        }
+        statusLabel.textContent = "Status: Rebooting device...";
+        progressBar.style.width = "0%";
+        rebootBtn.disabled = true;
+
+        try {
+        const response = await fetch("/reboot");
+        if (response.ok) {
+        statusLabel.textContent = "Status: Device is rebooting... Please wait 5 seconds";
+        // Try to reconnect automatically
+        setTimeout(() => {
+        window.location.reload();
+        }, 5000);
+        } else {
+        statusLabel.textContent = "Status: Reboot failed (HTTP error)";
+        rebootBtn.disabled = false;
+
+        // Reboot request failed, so the device isn't restarting - resume playback
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        }
+        } catch (error) {
+        statusLabel.textContent = `Status: Reboot error: ${error.message}`;
+        rebootBtn.disabled = false;
+
+        // Reboot request failed, so the device isn't restarting - resume playback
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (mmstartError) {
+        console.error('Error issuing /mmstart:', mmstartError);
+        }
+        }
+        }
+
+        // Event source for progress updates
+        const evtSource = new EventSource("/ota-progress");
+        evtSource.addEventListener("progress", (event) => {
+        const val = parseInt(event.data);
+        progressBar.style.width = val + "%";
+        statusLabel.textContent = `Status: Downloading... ${val}%`;
+        });
+
+        evtSource.addEventListener("complete", () => {
+        statusLabel.textContent = "Status: Update complete!";
+        setTimeout(handleReboot, 1000); // This will call your /reboot endpoint
+        });
+
+        evtSource.addEventListener("waiting", () => {
+        statusLabel.textContent = "Status: Waiting!";
+        });
+
+        evtSource.addEventListener("htmlstatus", (event) => {
+        const val = parseInt(event.data);
+        statusLabel.textContent = `Status: ReplyCode: ${val}`;
+        });
+
+        evtSource.addEventListener("unreachable", () => {
+        statusLabel.textContent = "Status: Online URL unreachable!";
+        rebootBtn.disabled = false;
+
+        // Download never actually happened, so no reboot will occur - resume playback
+        (async () => {
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        })();
+        });
+
+        evtSource.addEventListener("error", () => {
+        statusLabel.textContent = "Status: Update failed (server error)";
+        rebootBtn.disabled = false;
+
+        // Update failed, so no reboot will occur - resume playback
+        (async () => {
+        try {
+        await callMultimediaControl('/mmstart');
+        } catch (error) {
+        console.error('Error issuing /mmstart:', error);
+        }
+        })();
+        });
+
+        // Custom alert function
+        function showAlert(message, title = "ALERT", icon = "⚠️", iconClass = "warning", downloadUrl = null) {
+        return new Promise((resolve) => {
+        const modal = document.createElement("div");
+        modal.className = "custom-modal";
+
+        // Add progress element (hidden by default)
+        const progressHTML = downloadUrl ? `
+        <div class="download-progress" style="display: none; margin: 15px 0;">
+        <div class="fwupdate-progress-container" style="height: 20px;">
+        <div class="progress-bar" id="download-progress-bar" style="width: 0%; height: 100%;"></div>
+        </div>
+        <div id="download-status" style="text-align: center; font-size: 12px; margin-top: 5px;">Preparing download...</div>
+        </div>
+        ` : '';
+
+        const downloadButton = downloadUrl ? `
+        <button id="downloadFirmware" class="modal-button delete">
+        <span class="button-icon">⬇️</span> Download
+        </button>
+        ` : '';
+
+        modal.innerHTML = `
+        <div class="modal-content">
+        <div class="modal-header">
+        <div class="modal-icon ${iconClass}">${icon}</div>
+        <h2>${title}</h2>
+        </div>
+        <div class="modal-body">
+        <p>${message}</p>
+        ${progressHTML}
+        </div>
+        <div class="modal-buttons">
+        ${downloadButton}
+        <button id="confirmAlert" class="modal-button cancel">
+        OK <span class="button-icon">✓</span>
+        </button>
+        </div>
+        </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        const confirmBtn = modal.querySelector("#confirmAlert");
+        confirmBtn.onclick = () => {
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.remove();
+        resolve(true);
+        }, 300);
+        };
+
+        // Add download functionality if download button exists
+        if (downloadUrl) {
+        const downloadBtn = modal.querySelector("#downloadFirmware");
+        const progressSection = modal.querySelector(".download-progress");
+        const progressBar = modal.querySelector("#download-progress-bar");
+        const downloadStatus = modal.querySelector("#download-status");
+        downloadBtn.onclick = async () => {
+        progressSection.style.display = "block";
+        downloadBtn.disabled = true;
+        try {
+        const response = await fetch(downloadUrl);
+        const reader = response.body.getReader();
+        const contentLength = +response.headers.get('Content-Length');
+        let receivedLength = 0;
+        let chunks = [];
+        downloadStatus.textContent = `Downloading: 0% (0/${formatBytes(contentLength)})`;
+        while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        receivedLength += value.length;
+        const percent = Math.round((receivedLength / contentLength) * 100);
+        progressBar.style.width = `${percent}%`;
+        downloadStatus.textContent = `Downloading: ${percent}% (${formatBytes(receivedLength)}/${formatBytes(contentLength)})`;
+        }
+        // Combine chunks and trigger download
+        const blob = new Blob(chunks);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
+        document.body.appendChild(a);
+        a.click();
+
+        // Cleanup
+        setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        }, 100);
+
+        // NEW: Close modal after successful download
+        downloadStatus.textContent = "Download complete! Closing...";
+        setTimeout(() => {
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.remove();
+        resolve(true);
+        }, 300);
+        }, 1500); // 1.5 second delay to show completion message
+        } catch (error) {
+        downloadStatus.textContent = `Download failed: ${error.message}`;
+        progressBar.style.backgroundColor = "#ff4d4d";
+        downloadBtn.disabled = false;
+        }
+        };
+        }
+        });
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
+        }
+
+        // Custom confirm function
+        function showConfirm(message, title = "CONFIRM") {
+        return new Promise((resolve) => {
+        const modal = document.createElement("div");
+        modal.className = "custom-modal";
+        modal.innerHTML = `
+        <div class="modal-content">
+        <div class="modal-header">
+        <div class="modal-icon">❓</div>
+        <h2>${title}</h2>
+        </div>
+        <div class="modal-body">
+        <p>${message}</p>
+        </div>
+        <div class="modal-buttons">
+        <button id="cancelConfirm" class="modal-button cancel">
+        <span class="button-icon">✖</span> CANCEL
+        </button>
+        <button id="okConfirm" class="modal-button delete">
+        CONFIRM <span class="button-icon">✓</span>
+        </button>
+        </div>
+        </div>
+        `;
+        document.body.appendChild(modal);
+        modal.style.display = "flex";
+        setTimeout(() => modal.classList.add("show"), 10);
+
+        const okBtn = modal.querySelector("#okConfirm");
+        const cancelBtn = modal.querySelector("#cancelConfirm");
+
+        okBtn.onclick = () => {
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.remove();
+        resolve(true);
+        }, 300);
+        };
+
+        cancelBtn.onclick = () => {
+        modal.classList.remove("show");
+        setTimeout(() => {
+        modal.remove();
+        resolve(false);
+        }, 300);
+        };
+        });
+        }
+
+        async function checkFirmwareUpdate() {
+        if (!isFlashingFile) hideStatusBox();  // <-- NEW: hide unless actively flashing
+
+        try {
+        let githubVersionURL = "";
+
+        // First check if GitHub version file exists
+        const response = await fetch('/system-info'); // Use await instead of .then()
+        const data = await response.json();
+
+        // Set URLs based on chip model
+        if (data.system.chip_model === "ESP32-S2") {
+        githubVersionURL = "https://s2.version.txt";
+        githubFirmwareURL = "https://s2.firmware.bin";
+        } else if (data.system.chip_model === "ESP32-S3") {
+        githubVersionURL = "https://s3.version.txt";
+        githubFirmwareURL = "https://s3.firmware.bin";
+        } else {
+        githubFirmwareURL = "http://your-firmware-url.com";
+        showAlert(
+        "Unsupported chip model detected.",
+        "UPDATE CHECK FAILED",
+        "⚠️"
+        );
+        return;
+        }
+
+        // Now fetch the GitHub version
+        const githubRes = await fetch(githubVersionURL);
+
+        if (githubRes.status === 404) {
+        showAlert(
+        "The online version file was not found (404).\nThe server may be down or the URL is incorrect.",
+        "UPDATE CHECK FAILED",
+        "⚠️"
+        );
+        return;
+        }
+
+        if (githubRes.status === 400) {
+        showAlert(
+        "Bad Request (400).\nThe server replied that the URL is incorrect.",
+        "UPDATE CHECK FAILED",
+        "⚠️"
+        );
+        return;
+        }
+
+        if (!githubRes.ok) {
+        showAlert(
+        `Failed to check for updates (HTTP ${githubRes.status}).\nPlease check your internet connection.`,
+        "UPDATE CHECK FAILED",
+        "⚠️"
+        );
+        return;
+        }
+
+        // Get local version
+        const localRes = await fetch("/esp32-version");
+
+        if (!localRes.ok) {
+        showAlert(
+        "Failed to get local firmware version.\nThe device may be unresponsive.",
+        "ERROR",
+        "⚠️"
+        );
+        return;
+        }
+
+        const [localVersion, githubVersion] = await Promise.all([
+        localRes.text(),
+        githubRes.text()
+        ]);
+
+        if (localVersion.trim() !== githubVersion.trim()) {
+        showAlert(
+        `New firmware is available!\n\nCurrent: ${localVersion.trim()}\nLatest: ${githubVersion.trim()}`,
+        "UPDATE AVAILABLE",
+        "⬆️",
+        "success",
+        githubFirmwareURL  // Pass the download URL here
+        );
+        setDefaultFirmwareUrl();
+        showStatusBox();                         // <-- UNHIDE WHEN UPDATE IS AVAILABLE
+        statusLabel.textContent = "Status: Update available. Ready to download.";
+        progressBar.style.width = "0%";
+        } else {
+        showAlert("You're already on the latest firmware.", "NO UPDATE FOUND", "✔️");
+        }
+        } catch (error) {
+        showAlert(
+        `Failed to check for updates.\nError: ${error.message}`,
+        "ERROR",
+        "⚠️"
+        );
+        console.error("Error checking firmware version:", error);
+        }
+        }
+
+        function setDefaultFirmwareUrl() {
+        const firmwareUrlInput = document.getElementById("firmware-url");
+        firmwareUrlInput.value = githubFirmwareURL;
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+        // Load saved firmware URL if it exists
+        const savedUrl = localStorage.getItem('firmwareUrl');
+        if (savedUrl) {
+        document.getElementById("firmware-url").value = savedUrl;
+        }
+
+        fetch("/esp32-version")
+        .then(response => response.text())
+        .then(version => {
+        const footer = document.getElementById("version");
+        if (footer) {
+        const link = document.createElement("a");
+        link.href = "/";
+        link.textContent = "Current Firmware: " + version;
+        link.style.textDecoration = "none";
+        link.style.color = "inherit";
+        link.title = "Go Home";
+        footer.innerHTML = ''; // Clear existing content
+        footer.appendChild(link);
+        }
+        })
+        .catch(() => {
+        const footer = document.getElementById("version");
+        if (footer) footer.textContent = "ESP32 Firmware Update Tool";
+        });
+        });
+
+        function saveFirmwareUrl(url) {
+        localStorage.setItem('firmwareUrl', url);
+        }
+
+        function clearFirmwareUrl() {
+        localStorage.removeItem('firmwareUrl');
+        document.getElementById("firmware-url").value = "";
+        }
+
+        let dropdownTimer;
+
+        document.querySelector('.dropdown').addEventListener('mouseenter', function () {
+        clearTimeout(dropdownTimer);
+        this.querySelector('.dropdown-content').style.display = 'block';
+        });
+
+        document.querySelector('.dropdown').addEventListener('mouseleave', function () {
+        const dropdownContent = this.querySelector('.dropdown-content');
+        dropdownTimer = setTimeout(() => {
+        dropdownContent.style.display = 'none';
+        }, 300); // 300ms delay before hiding
+        });
+
+        // Also handle mouseenter/leave on the dropdown content itself
+        document.querySelector('.dropdown-content').addEventListener('mouseenter', function () {
+        clearTimeout(dropdownTimer);
+        });
+
+        document.querySelector('.dropdown-content').addEventListener('mouseleave', function () {
+        dropdownTimer = setTimeout(() => {
+        this.style.display = 'none';
+        }, 300);
+        });
+    </script>
+</body>
+</html>

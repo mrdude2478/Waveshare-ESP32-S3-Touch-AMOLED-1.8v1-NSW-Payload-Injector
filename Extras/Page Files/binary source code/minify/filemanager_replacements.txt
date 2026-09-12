@@ -1,0 +1,3 @@
+Start FTP server?This will allow file transfers@Start FTP server? This will allow file transfers
+Stop FTP server?This will disconnect all clients@Stop FTP server? This will disconnect all clients
+oldtext@newtext

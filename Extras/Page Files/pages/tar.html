@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 TAR Installer</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-card">
+        <div class="header">
+            <div class="dropdown">
+                <div class="dropbtn"><h1>☰ TAR Installer</h1></div>
+                <div class="dropdown-content">
+                    <a href="/" class="tooltip">
+                        Payloads
+                        <span class="tooltiptext">Upload payload files to the ESP32</span>
+                    </a>
+                    <a href="/file" class="tooltip">
+                        File Manager
+                        <span class="tooltiptext">Manage your files directly on the ESP32</span>
+                    </a>
+                    <a href="/edit" class="tooltip">
+                        File Editor
+                        <span class="tooltiptext">Edit your files directly on the ESP32</span>
+                    </a>
+                    <a href="/ota" class="tooltip">
+                        Update Firmware
+                        <span class="tooltiptext">Update your ESP32 firmware from an online server or from a local firmware file</span>
+                    </a>
+                    <a href="/config" class="tooltip">
+                        Configure Settings
+                        <span class="tooltiptext">Alter your WiFi/FTP/AP and other settings</span>
+                    </a>
+                    <a href="/info" class="tooltip">
+                        System Information
+                        <span class="tooltiptext">Information about the ESP32</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🌐 Online TAR Package Installer</h2>
+            <div class="form-group">
+                <input type="url" id="urlInput" placeholder="Enter TAR file URL (e.g., https://somewebsite.com/files.tar)">
+            </div>
+            <div class="button-row">
+                <button id="startBtn" onclick="startDownload()">Download & Unpack</button>
+                <button id="downloadBtn" onclick="downloadFile()">Download To PC</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>⬆️ Offline TAR Package Installer</h2>
+            <div class="form-group">
+                <label for="fileInput" class="file-upload-label">
+                    <span id="tar-fileInputLabel">Choose TAR file</span>
+                    <input type="file" id="fileInput" accept=".tar" class="file-upload-input">
+                </label>
+            </div>
+            <div class="button-group">
+                <button id="uploadBtn" onclick="startUpload()">Unpack TAR Package</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📊 Installation Progress</h2>
+            <div class="tar-progress-container">
+                <div class="tar-progress-bar" id="bar"></div>
+            </div>
+            <div class="status-box" id="status">Waiting to start...</div>
+        </div>
+
+        <footer class="footer-card">
+            <div class="footer-line" id="version">
+                <a href="./">Go Home</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Download Progress Modal -->
+    <div class="modal-overlay" id="downloadModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-icon">⬇️</div>
+                <div class="modal-title">DOWNLOADING TAR FILE</div>
+            </div>
+            <div class="modal-body">
+                <p class="modal-text">Downloading TAR file to your computer...</p>
+
+                <div class="download-progress">
+                    <div class="progress-container">
+                        <div class="download-progress-bar" id="download-progress-bar"></div>
+                    </div>
+                    <div class="download-status" id="download-status">Preparing download...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button" id="cancelDownload">Cancel Download</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        const defaultUrl = 'https://example.com/FlashFiles.tar';
+        let downloadAbortController = null;
+
+        // Send a GET request to one of the multimedia control endpoints (/mmstop or /mmstart)
+        // and confirm it replied with "OK". Throws on any failure.
+        async function callMultimediaControl(endpoint) {
+            const response = await fetch(endpoint);
+
+            if (!response.ok) {
+                throw new Error(endpoint + ' request failed: ' + response.statusText);
+            }
+
+            const text = (await response.text()).trim();
+            console.log(endpoint + ' response:', JSON.stringify(text));
+
+            if (text !== 'OK') {
+                throw new Error('Unexpected ' + endpoint + ' response: ' + text);
+            }
+        }
+
+        // Load URL from localStorage or use default
+        function loadUrl() {
+            const savedUrl = localStorage.getItem('tarUrl');
+            document.getElementById('urlInput').value = savedUrl || defaultUrl;
+        }
+
+        // Save URL to localStorage
+        function saveUrl() {
+            const url = document.getElementById('urlInput').value;
+            localStorage.setItem('tarUrl', url);
+        }
+
+        async function startUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showError('Please select a TAR file first');
+                return;
+            }
+
+            globalThis.localtar = true;
+
+            const statusEl = document.getElementById('status');
+            const btn = document.getElementById('uploadBtn');
+
+            // Show the status box
+            statusEl.style.display = 'block';
+
+            // Save previous status if it contains extraction info
+            const previousStatus = statusEl.innerHTML.includes('Files Extracted:')
+                ? statusEl.innerHTML
+                : 'Waiting to start...';
+
+            statusEl.innerHTML = 'Stopping playback...';
+            btn.disabled = true;
+
+            // Issue /mmstop and wait for the "OK" reply before uploading.
+            // No need to call /mmstart on success - a successful unpack triggers
+            // a device reboot, which resumes multimedia on its own.
+            try {
+                await callMultimediaControl('/mmstop');
+            } catch (error) {
+                console.error('Error issuing /mmstop:', error);
+                statusEl.innerHTML = `Could not stop playback<br><br>${previousStatus}`;
+                btn.disabled = false;
+                showError('Could not stop playback before upload: ' + error.message);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload-tar', true);
+
+            xhr.upload.onprogress = function (e) {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    document.getElementById('bar').style.width = percent.toFixed(2) + '%';
+                }
+            };
+
+            xhr.onload = async function () {
+                if (xhr.status === 200) {
+                    statusEl.innerHTML = `Upload complete, extracting...<br><br>${previousStatus}`;
+                } else {
+                    statusEl.innerHTML = `Upload failed<br><br>${previousStatus}`;
+                    btn.disabled = false;
+                    showError('Upload failed with status: ' + xhr.status);
+
+                    // Upload failed, so no reboot will happen - resume playback
+                    try {
+                        await callMultimediaControl('/mmstart');
+                    } catch (error) {
+                        console.error('Error issuing /mmstart:', error);
+                    }
+                }
+            };
+
+            xhr.onerror = async function () {
+                statusEl.innerHTML = `Upload error<br><br>${previousStatus}`;
+                btn.disabled = false;
+                showError('Upload failed - connection error');
+
+                // Upload failed, so no reboot will happen - resume playback
+                try {
+                    await callMultimediaControl('/mmstart');
+                } catch (error) {
+                    console.error('Error issuing /mmstart:', error);
+                }
+            };
+
+            xhr.send(formData);
+        }
+
+        // Show error popup (styled to match fwupdate.html modals)
+        function showError(message) {
+            const popup = document.createElement('div');
+            popup.className = 'error-popup';
+            popup.innerHTML = `
+                <div class="error-content">
+                    <div class="error-header">
+                        <div class="error-icon">⚠️</div>
+                        <h3>ERROR</h3>
+                    </div>
+                    <div class="error-body">
+                        <p>${message}</p>
+                    </div>
+                    <div class="error-buttons">
+                        <button class="error-button" onclick="this.parentNode.parentNode.parentNode.remove()">OK</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(popup);
+            setTimeout(() => popup.classList.add('show'), 10);
+        }
+
+        // Show download progress modal
+        function showDownloadProgress() {
+            const modal = document.getElementById('downloadModal');
+            modal.classList.add('active');
+
+            // Reset progress
+            document.getElementById('download-progress-bar').style.width = '0%';
+            document.getElementById('download-status').textContent = 'Preparing download...';
+        }
+
+        // Hide download progress modal
+        function hideDownloadProgress() {
+            const modal = document.getElementById('downloadModal');
+            modal.classList.remove('active');
+        }
+
+        // Format bytes to human readable format
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
+        }
+
+        async function downloadFile() {
+            const url = document.getElementById('urlInput').value;
+            if (!url) {
+                showError('Please enter a valid URL');
+                return;
+            }
+
+            const statusEl = document.getElementById('status');
+            const btn = document.getElementById('downloadBtn');
+
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = 'Checking URL...';
+            btn.disabled = true;
+
+            try {
+                // First check if the URL is valid and file exists
+                const response = await fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1' } });
+
+                if (response.ok) {
+                    // URL is good - show download progress modal
+                    showDownloadProgress();
+
+                    // Create abort controller for cancelling download
+                    downloadAbortController = new AbortController();
+
+                    // Get the file with progress tracking
+                    const downloadResponse = await fetch(url, {
+                        signal: downloadAbortController.signal
+                    });
+
+                    if (!downloadResponse.ok) {
+                        throw new Error(`HTTP ${downloadResponse.status}`);
+                    }
+
+                    const contentLength = +downloadResponse.headers.get('Content-Length');
+                    const reader = downloadResponse.body.getReader();
+                    let receivedLength = 0;
+                    let chunks = [];
+
+                    // Update progress as we receive data
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        chunks.push(value);
+                        receivedLength += value.length;
+
+                        // Update progress bar and status
+                        const percent = Math.round((receivedLength / contentLength) * 100);
+                        document.getElementById('download-progress-bar').style.width = `${percent}%`;
+                        document.getElementById('download-status').textContent =
+                            `Downloading: ${percent}% (${formatBytes(receivedLength)}/${formatBytes(contentLength)})`;
+                    }
+
+                    // Combine chunks and trigger download
+                    const blob = new Blob(chunks);
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = url.substring(url.lastIndexOf('/') + 1);
+                    document.body.appendChild(a);
+                    a.click();
+
+                    // Cleanup
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(blobUrl);
+                    }, 100);
+
+                    // Update status and close modal after a short delay
+                    document.getElementById('download-status').textContent = "Download complete! Closing...";
+                    setTimeout(() => {
+                        hideDownloadProgress();
+                        btn.disabled = false;
+                    }, 1500);
+
+                } else {
+                    showError(`File not found (HTTP ${response.status})`);
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    // Download was cancelled by user
+                    statusEl.innerHTML = 'Download cancelled';
+                } else {
+                    showError('Could not access the file: ' + error.message);
+                    statusEl.innerHTML = 'Download failed';
+                }
+                hideDownloadProgress();
+                btn.disabled = false;
+            }
+        }
+
+        // Start download function
+        async function startDownload() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                showError('Please enter a valid URL');
+                return;
+            }
+
+            // Save the URL for next time
+            saveUrl();
+
+            const statusEl = document.getElementById('status');
+            const btn = document.getElementById('startBtn');
+
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = 'Stopping playback...';
+            btn.disabled = true;
+
+            // Issue /mmstop and wait for the "OK" reply before starting the download.
+            // No need to call /mmstart on success - a successful unpack triggers
+            // a device reboot, which resumes multimedia on its own.
+            try {
+                await callMultimediaControl('/mmstop');
+            } catch (error) {
+                console.error('Error issuing /mmstop:', error);
+                statusEl.innerHTML = 'Could not stop playback';
+                btn.disabled = false;
+                showError('Could not stop playback before download: ' + error.message);
+                return;
+            }
+
+            statusEl.innerHTML = 'Starting download...';
+
+            let timeoutId;
+
+            try {
+                const response = await fetch('/start-download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'url=' + encodeURIComponent(url)
+                });
+
+                if (!response.ok) throw new Error(await response.text());
+
+                statusEl.innerHTML = 'Download started...';
+
+                // Set a timer for 5 seconds
+                timeoutId = setTimeout(async () => {
+                    if (statusEl.innerHTML === 'Download started...') {
+                        // If still on "Starting download...", enable the button
+                        statusEl.innerHTML = 'Unable to get TAR file...';
+                        btn.disabled = false;
+
+                        // No download/extraction happened, so no reboot will occur - resume playback
+                        try {
+                            await callMultimediaControl('/mmstart');
+                        } catch (error) {
+                            console.error('Error issuing /mmstart:', error);
+                        }
+
+                        location.reload();
+                    }
+                }, 5000);
+
+            } catch (error) {
+                // Clear the timeout if an error occurs
+                if (timeoutId) clearTimeout(timeoutId);
+
+                console.error('Error:', error);
+                statusEl.innerHTML = 'Error starting download';
+                btn.disabled = false;
+
+                const errorMsg = error.message.includes('URL_CHECK_FAILED')
+                    ? 'The URL cannot be reached. Please check:'
+                    : 'Failed to get the TAR file, try Downloading Manually:';
+
+                showError(`${errorMsg}<br>${url}`);
+
+                // Download never started, so no reboot will occur - resume playback
+                try {
+                    await callMultimediaControl('/mmstart');
+                } catch (mmstartError) {
+                    console.error('Error issuing /mmstart:', mmstartError);
+                }
+            }
+        }
+
+        function delayedRedirect(url, delay) {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    window.location.href = url;
+                    resolve(); // This will execute after the redirect is initiated
+                }, delay);
+            });
+        }
+
+        // Trigger a reboot and reload THIS page once the timer expires,
+        // matching the behavior of handleReboot() in fwupdate.html
+        function rebootAndReload(delay = 5000) {
+            fetch('/reboot').catch(err => {
+                console.error('Reboot request failed:', err);
+            });
+
+            setTimeout(() => {
+                window.location.reload();
+            }, delay);
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                const statusEl = document.getElementById('status');
+                statusEl.style.display = 'block';
+                statusEl.innerHTML = 'Connected, waiting...';
+            };
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, retrying in 2s...');
+                setTimeout(connectWebSocket, 2000);
+            };
+            ws.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    console.log('WebSocket update:', data);
+
+                    // Update progress bar & status
+                    const percent = data.total > 0 ? (data.download / data.total * 100) : 0;
+                    document.getElementById('bar').style.width = percent.toFixed(2) + '%';
+
+                    let statusText = `
+                        Download- ${Math.round(data.download / 1024)}KB / ${Math.round(data.total / 1024)}KB (${percent.toFixed(1)}%)<br>
+                        Files Extracted- ${data.extracted} / ${data.total_files}<br>
+                        Current File- ${data.current_file || 'None'}
+                    `;
+
+                    if (data.current_file === "Failed to begin HTTP connection") {
+                        if (!globalThis.localtar) {
+                            delayedRedirect('/reboot', 0); //best reboot to reset the web socket
+                        }
+                    }
+
+                    // Only show completion if extraction actually happened
+                    if (data.extracted > 0 && data.extracted === data.total_files) {
+                        statusText += "<br><strong>All files extracted!</strong>";
+                        statusText += "<br><strong>Rebooting device... Page will refresh in 5 seconds!</strong>";
+                        // Re-enable all buttons
+                        document.getElementById('uploadBtn').disabled = false;
+                        document.getElementById('startBtn').disabled = false;
+                        rebootAndReload(5000);
+                    }
+
+                    const statusEl = document.getElementById('status');
+                    statusEl.style.display = 'block';
+                    statusEl.innerHTML = statusText;
+                    document.getElementById('startBtn').disabled = data.downloading;
+                } catch (error) {
+                    console.error('WebSocket parse error:', error);
+                }
+            };
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Initialize when page loads
+        window.onload = function () {
+            globalThis.localtar = false;
+            loadUrl();
+            connectWebSocket();
+            document.getElementById('urlInput').addEventListener('change', saveUrl);
+
+            document.getElementById('cancelDownload').addEventListener('click', function () {
+                if (downloadAbortController) {
+                    downloadAbortController.abort();
+                }
+            });
+
+            document.getElementById('fileInput').addEventListener('change', function (e) {
+                const file = e.target.files[0];
+                const fileName = file ? file.name : 'Choose TAR file';
+                document.getElementById('tar-fileInputLabel').textContent = fileName;
+
+                if (file) {
+                    const statusEl = document.getElementById('status');
+                    statusEl.style.display = 'block';
+                    statusEl.innerHTML = `Selected: <strong>${fileName}</strong><br>Ready to unpack.`;
+                }
+            });
+
+            // Add version info to footer if available
+            fetch('/esp32-version')
+                .then(response => response.text())
+                .then(version => {
+                    const footer = document.getElementById("version");
+                    if (footer) {
+                        const link = document.createElement("a");
+                        link.href = "/";
+                        link.textContent = "Current Firmware: " + version;
+                        link.style.textDecoration = "none";
+                        link.style.color = "inherit";
+                        link.title = "Go Home";
+                        footer.innerHTML = "";
+                        footer.appendChild(link);
+                    }
+                })
+                .catch(() => {
+                    const footer = document.getElementById("version");
+                    if (footer) footer.innerHTML = '<a href="/">Go Home</a>';
+                });
+        };
+    </script>
+</body>
+</html>

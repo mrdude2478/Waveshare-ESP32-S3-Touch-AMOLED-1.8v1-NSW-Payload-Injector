@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Configuration</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-card">
+        <div class="header">
+            <div class="dropdown">
+                <div class="dropbtn"><h1>☰ Configuration</h1></div>
+                <div class="dropdown-content">
+                    <a href="/" class="tooltip">
+                        Payloads
+                        <span class="tooltiptext">Upload payload files to the ESP32</span>
+                    </a>
+                    <a href="/file" class="tooltip">
+                        File Manager
+                        <span class="tooltiptext">Manage your files directly on the ESP32</span>
+                    </a>
+                    <a href="/edit" class="tooltip">
+                        File Editor
+                        <span class="tooltiptext">Edit your files directly on the ESP32</span>
+                    </a>
+                    <a href="/ota" class="tooltip">
+                        Update Firmware
+                        <span class="tooltiptext">Update your ESP32 firmware from an online server or from a local firmware file</span>
+                    </a>
+                    <a href="/downloader" class="tooltip">
+                        TAR Installer
+                        <span class="tooltiptext">Downloads TAR files to PSRAM and extracts them to your flash FFAT partiton</span>
+                    </a>
+                    <a href="/info" class="tooltip">
+                        Information
+                        <span class="tooltiptext">Show information about the ESP32-Sx chip</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h2>Server Settings</h2>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="use_station">
+                    <span>Enable Station Mode (Wifi & AP Mode together)</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="use_mdns">
+                    <span>Enable mDNS Service</span>
+                </label>
+                <div id="bluetooth-container" class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="use_bluetooth">
+                        <span>Enable Bluetooth</span>
+                    </label>
+                </div>
+                <label><span>★ If using ESP32-S2 disable the above if installing online TAR or firmware updates ★</span></label>
+            </div>
+            <div id="defaultAnimationContainer3" class="hidden">
+                <div class="form-group">
+                    <label for="hostname">mDNS Service Hostname:</label>
+                    <input type="text" id="hostname" placeholder="Esp32 (when accessing use hostname.local)">
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h2>WiFi Settings</h2>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="use_wifi">
+                    <span>Use WiFi (uncheck for AP mode only)</span>
+                </label>
+            </div>
+            <div id="defaultAnimationContainer4" class="hidden">
+                <div class="form-group">
+                    <label for="wifi_ssid">WiFi SSID:</label>
+                    <input type="text" id="wifi_ssid" placeholder="Your WiFi network name">
+                </div>
+                <div class="form-group">
+                    <label for="wifi_password">WiFi Password:</label>
+                    <input type="password" id="wifi_password" placeholder="Your WiFi password">
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h2>Access Point Settings</h2>
+            <div class="form-group">
+                <label for="ap_ssid">AP SSID:</label>
+                <input type="text" id="ap_ssid" placeholder="Access Point name">
+            </div>
+            <div class="form-group">
+                <label for="ap_password">AP Password (leave blank for open):</label>
+                <input type="password" id="ap_password" placeholder="Access Point password">
+            </div>
+        </div>
+        <div class="section">
+            <h2>FTP Server Settings</h2>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="allow_ftp">
+                    <span>Start FTP Server on boot</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="ftp_username">FTP Username:</label>
+                <input type="text" id="ftp_username" placeholder="FTP username">
+            </div>
+            <div class="form-group">
+                <label for="ftp_password">FTP Password:</label>
+                <input type="password" id="ftp_password" placeholder="FTP password">
+            </div>
+        </div>
+        <div class="section">
+            <h2>SD Card Settings</h2>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="use_sdcard">
+                    <span>Enable SD Card</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Auto Sleep Settings</h2>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="auto_sleep">
+                    <span>Enable Auto Sleep</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <div id="defaultAnimationContainer5" class="hidden">
+                    <div class="form-group">
+                        <label for="delay_minutes">Sleep Delay Minutes:</label>
+                        <input type="number" id="delay_minutes" value="10" placeholder="10">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="statusMsg" class="config-status-box"></div>
+        <div class="config-button-row">
+            <button id="saveBtn">Save Configuration</button>
+            <button id="rebootBtn">Save & Reboot</button>
+        </div>
+        <div>
+            <footer class="config-footer-card">
+                <div class="footer-line" id="version">
+                    <a href="/" title="Go Home">Go Home</a>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        // Load current configuration when page loads
+        document.addEventListener('DOMContentLoaded', function () {
+
+        // Add these event listeners after your existing DOMContentLoaded code
+        document.getElementById('use_station').addEventListener('change', function () {
+        // When Station Mode is checked, also check WiFi
+        if (this.checked) {
+        document.getElementById('use_wifi').checked = true;
+        const animationContainer4 = document.getElementById('defaultAnimationContainer4');
+        animationContainer4.classList.remove('hidden');
+        }
+
+        if (this.checked) {
+        //document.getElementById('use_bluetooth').checked = true;
+        const animationContainer4 = document.getElementById('defaultAnimationContainer4');
+        animationContainer4.classList.remove('hidden');
+        }
+        // Note: We don't uncheck WiFi when Station Mode is unchecked
+        });
+
+
+        fetch('/get-config')
+        .then(response => {
+        if (!response.ok) {
+        throw new Error('Network response was not ok');
+        }
+        return response.json();
+        })
+        .then(config => {
+        // Set all form fields
+        document.getElementById('use_wifi').checked = config.use_wifi;
+        document.getElementById('use_bluetooth').checked = config.use_bluetooth;
+        document.getElementById('wifi_ssid').value = config.wifi_ssid;
+        document.getElementById('wifi_password').value = config.wifi_password;
+        document.getElementById('ap_ssid').value = config.ap_ssid;
+        document.getElementById('ap_password').value = config.ap_password;
+        document.getElementById('allow_ftp').checked = config.allow_ftp;
+        document.getElementById('ftp_username').value = config.ftp_username;
+        document.getElementById('ftp_password').value = config.ftp_password;
+        document.getElementById('use_sdcard').checked = config.use_sdcard;
+        document.getElementById('auto_sleep').checked = config.auto_sleep;
+        document.getElementById('delay_minutes').value = config.delay_minutes;
+        document.getElementById('hostname').value = config.hostname;
+        document.getElementById('use_station').checked = config.use_station;
+        document.getElementById('use_mdns').checked = config.use_mdns;
+
+        const animationContainer3 = document.getElementById('defaultAnimationContainer3');
+        if (document.getElementById('use_mdns').checked) {
+        animationContainer3.classList.remove('hidden');
+        } else {
+        animationContainer3.classList.add('hidden');
+        }
+
+        const animationContainer4 = document.getElementById('defaultAnimationContainer4');
+        if (document.getElementById('use_wifi').checked) {
+        animationContainer4.classList.remove('hidden');
+        } else {
+        animationContainer4.classList.add('hidden');
+        }
+
+        const animationContainer5 = document.getElementById('defaultAnimationContainer5');
+        if (document.getElementById('auto_sleep').checked) {
+        animationContainer5.classList.remove('hidden');
+        } else {
+        animationContainer5.classList.add('hidden');
+        }
+
+        // Hide Bluetooth checkbox if ESP32 is S2
+        if (config.is_s2 === true) {
+        const bluetoothContainer = document.getElementById('bluetooth-container');
+        if (bluetoothContainer) {
+        bluetoothContainer.style.display = 'none';
+        }
+        document.getElementById('use_bluetooth').checked = false;
+        }
+
+        })
+        .catch(error => {
+        showStatus('Error loading configuration: ' + error.message, false);
+        });
+        });
+
+        // Save configuration
+        document.getElementById('saveBtn').addEventListener('click', function () {
+        saveConfig(false); // false means don't reboot
+        });
+
+        document.getElementById('rebootBtn').addEventListener('click', function () {
+        saveConfig(true); // true means do reboot
+        });
+
+        document.getElementById('use_mdns').addEventListener('change', function () {
+        const animationContainer3 = document.getElementById('defaultAnimationContainer3');
+        if (this.checked) {
+        animationContainer3.classList.remove('hidden');
+        } else {
+        animationContainer3.classList.add('hidden');
+        }
+        });
+
+        document.getElementById('use_wifi').addEventListener('change', function () {
+        const animationContainer4 = document.getElementById('defaultAnimationContainer4');
+        if (this.checked) {
+        animationContainer4.classList.remove('hidden');
+        } else {
+        animationContainer4.classList.add('hidden');
+        //document.getElementById('use_bluetooth').checked = false;
+        }
+        });
+
+        // Add this event listener after your other checkbox event listeners
+        document.getElementById('auto_sleep').addEventListener('change', function () {
+        const animationContainer5 = document.getElementById('defaultAnimationContainer5');
+
+        if (this.checked) {
+        animationContainer5.classList.remove('hidden');
+        } else {
+        animationContainer5.classList.add('hidden');
+        }
+        });
+
+        function saveConfig(reboot = false) {
+        const statusDiv = document.getElementById('statusMsg');
+        statusDiv.style.display = 'none';
+
+        const config = {
+        use_wifi: document.getElementById('use_wifi').checked,
+        wifi_ssid: document.getElementById('wifi_ssid').value,
+        wifi_password: document.getElementById('wifi_password').value,
+        ap_ssid: document.getElementById('ap_ssid').value,
+        ap_password: document.getElementById('ap_password').value,
+        allow_ftp: document.getElementById('allow_ftp').checked,
+        ftp_username: document.getElementById('ftp_username').value,
+        ftp_password: document.getElementById('ftp_password').value,
+        use_sdcard: document.getElementById('use_sdcard').checked,
+        auto_sleep: document.getElementById('auto_sleep').checked,
+        delay_minutes: document.getElementById('delay_minutes').value,
+        hostname: document.getElementById('hostname').value,
+        use_station: document.getElementById('use_station').checked,
+        use_mdns: document.getElementById('use_mdns').checked,
+        use_bluetooth: document.getElementById('use_bluetooth').checked,
+        };
+
+        showStatus('Saving configuration...', true);
+
+        fetch('/save-config', {
+        method: 'POST',
+        headers: {
+        'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(config)
+        })
+        .then(response => {
+        if (!response.ok) {
+        return response.text().then(text => {
+        throw new Error(text || `Server error: ${response.status}`);
+        });
+        }
+        return response.text();
+        })
+        .then(result => {
+        showStatus('Configuration saved successfully!', true);
+        if (reboot) {
+        setTimeout(() => {
+        fetch('/reboot').catch(() => { });
+        }, 1000);
+        }
+        })
+        .catch(error => {
+        console.error('Full error:', error);
+        showStatus('Error saving configuration: ' + error.message, false);
+        });
+        }
+
+        function showStatus(message, isSuccess) {
+        const statusDiv = document.getElementById('statusMsg');
+        statusDiv.textContent = message;
+        statusDiv.className = isSuccess ? 'config-status-box status-success' : 'config-status-box status-error';
+        statusDiv.style.display = 'block';
+
+        // Auto-hide after 5 seconds unless it's a reboot message
+        if (!isSuccess || message.indexOf('Rebooting') === -1) {
+        setTimeout(() => {
+        statusDiv.style.display = 'none';
+        }, 5000);
+        }
+        }
+    </script>
+</body>
+</html>

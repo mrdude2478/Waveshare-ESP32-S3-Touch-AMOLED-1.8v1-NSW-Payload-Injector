@@ -1,0 +1,8 @@
+x86_64-w64-mingw32-g++ -o webcompressor webcompressor.cpp -lz -static
+x86_64-w64-mingw32-strip webcompressor.exe
+
+
+Windows - x64 Native Tools command prompt
+cl /EHsc /W4 /O2 /MT webcompressor.cpp ^
+  /I C:\vcpkg\installed\x64-windows-static\include ^
+  /link /LIBPATH:C:\vcpkg\installed\x64-windows-static\lib zs.lib

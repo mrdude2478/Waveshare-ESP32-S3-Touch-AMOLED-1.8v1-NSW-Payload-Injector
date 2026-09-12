@@ -1,0 +1,14 @@
+How it works:
+
+Loads your image via GDI+ (PNG, BMP, JPG, whatever — same trick as before, no external libraries).
+If it isn't already exactly 32×32, resizes it (bicubic). For crisp results with something like your star, save it at exactly 32×32 in Photoshop so no resampling happens at all.
+Thresholds every pixel to black/white by luminance (default cutoff 128 — dark pixels become "on"/lit). Transparent pixels always count as background.
+Packs it into the identical uint32_t[32] row format your font array uses, so it's a drop-in graphics32x32[][32] PROGMEM array.
+
+cl /EHsc /std:c++17 image_to_arduino.cpp
+
+image_to_arduino.exe icons.h star.png
+image_to_arduino.exe icons.h star.png heart.png arrow.png    (multiple entries in one array)
+image_to_arduino.exe icons.h star.png 100                    (custom threshold)
+image_to_arduino.exe icons.h star.png invert                 (light shape on dark background)
+

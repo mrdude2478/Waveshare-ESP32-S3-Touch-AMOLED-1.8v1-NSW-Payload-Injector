@@ -1,0 +1,4 @@
+s2.version.txt@raw.githubusercontent.com/example/example.github.io/refs/heads/main/ESP32-Flasher/version.txt
+s2.firmware.bin@raw.githubusercontent.com/example/example.github.io/refs/heads/main/ESP32-Flasher/esp32s2/wemos/firmware.bin
+s3.version.txt@raw.githubusercontent.com/example/example.github.io/refs/heads/main/ESP32-Flasher/version.txt
+s3.firmware.bin@raw.githubusercontent.com/example/example.github.io/refs/heads/main/ESP32-Flasher/esp32s3/lolin/firmware.bin

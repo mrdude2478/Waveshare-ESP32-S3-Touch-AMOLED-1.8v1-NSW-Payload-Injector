@@ -1,0 +1,4 @@
+Upload.binfilestothe/payloadsfolder.TheESP32willreadpayload.txttoknowwhichonetouse.@Upload .bin files to the /payloads folder. The ESP32 will read payload.txt to know which one to use.
+Nofileselected@No file selected
+Clickonapayloadtoselectit,thenclick"SetasDefault"tocreatepayload.txt@Click on a payload to select it, then click "Set as Default" to create payload.txt
+Readingpayload.txt...@Reading payload.txt...

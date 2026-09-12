@@ -1,0 +1,108 @@
+For Building use environmental variables or from cmd line:
+
+set ANDROID_HOME="C:/Users/yourusername/AppData/Local/Android\Sdk"
+set ANDROID_SDK_ROOT="C:/Users/yourusername/AppData/Local/Android\Sdk"
+set JAVA_HOME="C:/Program Files/Java/jdk-21.0.10"
+
+Install the following Android files:
+Android Sdk (and build-tools inside the Sdk folder - see included pictures)
+https://dl.google.com/android/repository/source-36_r01.zip
+https://dl.google.com/android/repository/platform-36_r02.zip
+https://dl.google.com/android/repository/build-tools_r36.1_windows.zip
+
+Install Java JDK:
+https://download.oracle.com/java/25/latest/jdk-25_windows-x64_bin.exe
+
+Install Gradle:
+https://services.gradle.org/distributions/gradle-8.14.2-bin.zip
+
+
+Install:
+nodejs (https://nodejs.org/dist/v24.15.0/node-v24.15.0-x64.msi)
+
+Example: Add Windows environmental variable paths:
+C:\Users\yourusername\AppData\Local\Android\Sdk\cmdline-tools\latest\bin
+C:\Users\yourusername\AppData\Local\Android\Sdk\platform-tools
+C:\Users\yourusername\AppData\Local\Android\Sdk\build-tools
+C:\gradle-8.14.2
+C:\Program Files\nodejs\
+
+Once nodejs is installed:
+npm install -g cordova
+
+Building:
+Make a folder on your desktop or where you want called modchiproot
+
+In command prompt cd into it:
+cd C:\Users\username\Desktop\modchiproot
+
+Issue this command:
+cordova create Modchip com.ameliafox.modchip "Modchip"
+
+cd into the Modchip folder:
+cd Modchip
+
+Next - copy and overwrite the created config.xml and wwww folder and contents from the cordova-Source.zip file.
+
+Next issue this command:
+cordova clean (clean gradle cache)
+cordova platform add android
+or
+cordova platform add android@11.X.X
+or
+cordova platform add android@latest
+
+(After a few seconds it will install the required files. So we can now build and test)
+
+To build we do this:
+cordova build android --release -- --packageType=apk (zip align and sign created apk afterwards)
+or for a debug apk:
+cordova build android
+
+
+To install on our phone - make sure to have developer options enabled and adb debugging enabled.
+Installing:
+cordova run android
+
+Rebuilding and Instaling:
+cordova clean android
+cordova build android --release -- --packageType=apk (for release)
+cordova build android (for debug)
+cordova run android
+
+Issues:
+If you get issues building make sure you have set environmental variables for the Sdk and also you installed these:
+
+Check plugins:
+cordova plugin ls
+
+Check Platforms:
+cordova platform ls
+cordova platform remove android
+cordova platform add android@11.X.X
+
+:: Add plugins cleanly
+cordova plugin add cordova-plugin-statusbar
+cordova plugin add cordova-plugin-inappbrowser
+cordova plugin add cordova-plugin-ble-central@slim
+cordova plugin add cordova.plugins.diagnostic
+
+Check SDK components:
+cordova requirements android
+sdkmanager "build-tools;36.1.0"
+
+If you still get build issues - delete this folder:
+C:\Users\yourusername\.gradle
+
+
+Compiled APK should be here:
+C:\Users\yourusername\Desktop\modchiproot\Modchip\platforms\android\app\build\outputs\apk\debug\app-debug.apk
+or
+C:\Users\yourusername\Desktop\modchiproot\Modchip\platforms\android\app\build\outputs\apk\release\app-release-unsigned.apk
+
+For building a signed and zip aligned apk - see here:
+https://github.com/citydesert/cordova-build-release-signed
+
+Cordova update Help:
+https://cordova.apache.org/archive/docs/en/11.x/guide/platforms/android/#:~:text=Cordova%2DAndroid%20requires%20the%20Android,the%20Android%20Studio's%20System%20Requirements.
+https://cordova.apache.org/docs/en/latest/guide/platforms/android/upgrade.html

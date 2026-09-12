@@ -1,0 +1,6 @@
+Editing-<@Editing: <
+>KB@> KB
+Selectafiletoedit@Select a file to edit
+>(<span id=fileSize>0</span> KB)<@> (<span id=fileSize>0</span> KB) <
+Coded By MrDude@
+Report Bugs@Go Home
